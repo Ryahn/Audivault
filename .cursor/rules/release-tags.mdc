@@ -1,0 +1,27 @@
+---
+description: Semver tag and GitHub release on every push
+alwaysApply: true
+---
+
+# Release tags
+
+`__version__` in `app/__init__.py` is the only version. A push to `github` includes one new annotated tag `vMAJOR.MINOR.PATCH` matching `__version__` on the tip commit.
+
+When committing work that will be pushed:
+
+1. Bump `__version__` in that commit unless the user named a version.
+   - patch (`1.1.1`): fix, docs, tests, refactor
+   - minor (`1.2.0`): new behavior existing clients can ignore
+   - major (`2.0.0`): breaking API or stored data
+2. Write the commit message as the release note: a subject line, then why.
+3. Tag the tip: `git tag -a vX.Y.Z -m "subject"`. Several commits in one push share that tag. The last commit holds the version bump.
+4. Push the branch and the tag. Do not push without the tag. Do not move, delete, or force-push a tag. Do not change git config.
+5. Do not create the GitHub Release yourself. Pushing the tag runs `.github/workflows/release.yml`. Its notes are the commit messages since the previous tag.
+
+Git on this machine is Windows OpenSSH, which does not see Pageant. For the push only, set `GIT_SSH_COMMAND` (Pageant must already be running):
+
+```powershell
+$env:GIT_SSH_COMMAND = 'C:/PROGRA~1/PuTTY/plink.exe -batch -hostkey SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU'
+git push github HEAD
+git push github vX.Y.Z
+```

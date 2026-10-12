@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Accept only MAJOR.MINOR.PATCH tags
+        id: gate
+        run: |
+          if [[ "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.gate.outputs.ok == 'true'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Write notes from commit messages
+        if: steps.gate.outputs.ok == 'true'
+        run: |
+          set -euo pipefail
+          prev=""
+          if git rev-parse -q --verify "${GITHUB_REF_NAME}^" >/dev/null; then
+            prev="$(git describe --tags --match 'v[0-9]*' --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)"
+            if ! [[ "$prev" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              prev=""
+            fi
+          fi
+          if [[ -z "$prev" ]]; then
+            git log -1 --pretty=format:'%s%n%n%b' > notes.md
+          else
+            git log "${prev}..HEAD" --reverse --pretty=format:'%s%n%n%b%n' > notes.md
+          fi
+          printf '\n' >> notes.md
+
+      - name: Publish the release
+        if: steps.gate.outputs.ok == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" --title "${GITHUB_REF_NAME}" --notes-file notes.md

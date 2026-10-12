@@ -1,0 +1,1881 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Audivault</title>
+  <meta name="description" content="An open-source, self-hosted audiobook server with Audiobookshelf API compatibility.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='1' y='1' width='30' height='30' rx='8' fill='%230f2a33' stroke='%232fd8f0' stroke-width='2'/%3E%3Cpath d='M9 21v-6a7 7 0 0 1 14 0v6' fill='none' stroke='%232fd8f0' stroke-width='2.4' stroke-linecap='round'/%3E%3Crect x='7' y='18' width='4' height='7' rx='1.5' fill='%232fd8f0'/%3E%3Crect x='21' y='18' width='4' height='7' rx='1.5' fill='%232fd8f0'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="/static/css/app.css">
+  <script type="module" src="/static/js/main.js"></script>
+</head>
+<body x-data>
+<audio id="audio-el" preload="auto"></audio>
+
+<!-- ================================================================ splash -->
+<div x-show="!$store.app.ready" class="auth-wrap"><div class="spinner-border" role="status"></div></div>
+
+<!-- ================================================================ auth -->
+<template x-if="$store.app.ready && !$store.app.user">
+  <div class="auth-wrap" x-data="authView()">
+    <div class="auth-card panel">
+      <div class="panel-body p-4">
+        <div class="brand mb-1"><span class="brand-mark"><i class="bi bi-headphones"></i></span> Audivault</div>
+        <p class="text-muted small mb-4">An open-source, self-hosted audiobook server with Audiobookshelf API compatibility.</p>
+        <template x-if="!$store.app.initialized">
+          <form @submit.prevent="setup()">
+            <h2 class="h5 mb-1">Create the admin account</h2>
+            <p class="text-muted small mb-3">This is the root user for your server.</p>
+            <div class="mb-3"><label class="form-label">Username</label><input class="form-control" x-model="username" autocomplete="username" required></div>
+            <div class="mb-3"><label class="form-label">Password</label><input class="form-control" type="password" x-model="password" autocomplete="new-password"></div>
+            <div class="mb-3"><label class="form-label">Confirm password</label><input class="form-control" type="password" x-model="password2" autocomplete="new-password"></div>
+            <div class="text-danger small mb-2" x-text="error" x-show="error"></div>
+            <button class="btn btn-accent w-100" :disabled="busy">Create account</button>
+          </form>
+        </template>
+        <template x-if="$store.app.initialized">
+          <form @submit.prevent="login()">
+            <div class="mb-3"><label class="form-label">Username</label><input class="form-control" x-model="username" autocomplete="username" autofocus required></div>
+            <div class="mb-3"><label class="form-label">Password</label><input class="form-control" type="password" x-model="password" autocomplete="current-password"></div>
+            <div class="text-danger small mb-2" x-text="error" x-show="error"></div>
+            <button class="btn btn-accent w-100" :disabled="busy"><span x-show="busy" class="spinner-border spinner-border-sm me-2" style="color:inherit"></span>Sign in</button>
+          </form>
+        </template>
+      </div>
+    </div>
+  </div>
+</template>
+
+<!-- ================================================================ app shell -->
+<template x-if="$store.app.ready && $store.app.user">
+<div>
+  <header class="topbar">
+    <div class="inner">
+      <a class="brand" href="#/home"><span class="brand-mark"><i class="bi bi-headphones"></i></span><span class="d-none d-sm-inline">Audivault</span></a>
+      <select class="form-select form-select-sm w-auto" x-show="$store.app.libraries.length > 1" :value="$store.app.libraryId"
+              @change="$store.app.setLibrary($event.target.value); $store.app.go('home')" aria-label="Library">
+        <template x-for="l in $store.app.libraries" :key="l.id"><option :value="l.id" x-text="l.name"></option></template>
+      </select>
+      <nav class="nav-links ms-2">
+        <a href="#/home" :class="$store.app.route.name === 'home' && 'active'">Home</a>
+        <a :href="`#/library/${$store.app.libraryId}`" :class="['library','item','series','author'].includes($store.app.route.name) && 'active'">Library</a>
+        <a href="#/stats" :class="$store.app.route.name === 'stats' && 'active'">Stats</a>
+        <template x-if="$store.app.isAdmin"><a href="#/import" :class="$store.app.route.name === 'import' && 'active'">Import</a></template>
+        <template x-if="$store.app.isAdmin"><a href="#/organize" :class="$store.app.route.name === 'organize' && 'active'">Organize</a></template>
+        <template x-if="$store.app.isAdmin"><a href="#/duplicates" :class="$store.app.route.name === 'duplicates' && 'active'">Duplicates <span class="nav-badge" x-show="$store.app.duplicateCount" x-text="$store.app.duplicateCount"></span></a></template>
+      </nav>
+      <form class="search flex-grow-1 ms-auto" @submit.prevent="$store.app.doSearch()">
+        <div class="input-group input-group-sm">
+          <span class="input-group-text"><i class="bi bi-search"></i></span>
+          <input class="form-control" placeholder="Search titles, authors, narrators…" x-model="$store.app.search" aria-label="Search">
+        </div>
+      </form>
+      <a href="#/settings/activity" class="btn btn-ghost btn-icon btn-sm" x-show="$store.app.runningTasks.length" :title="$store.app.runningTasks.map(t => t.title).join(', ')">
+        <span class="spinner-border spinner-border-sm"></span>
+      </a>
+      <div class="position-relative" x-data="{ open: false }" @click.outside="open = false">
+        <button class="btn btn-ghost btn-icon btn-sm" @click="open = !open" aria-label="Menu"><i class="bi bi-person-circle"></i></button>
+        <div class="menu" x-show="open" x-cloak @click="open = false">
+          <div class="menu-label" x-text="$store.app.user.username"></div>
+          <a href="#/settings/account"><i class="bi bi-person"></i> Account</a>
+          <template x-if="$store.app.isAdmin"><a href="#/settings/libraries"><i class="bi bi-gear"></i> Settings</a></template>
+          <button @click="$store.app.toggleTheme()"><i class="bi" :class="$store.app.theme === 'dark' ? 'bi-sun' : 'bi-moon-stars'"></i> <span x-text="$store.app.theme === 'dark' ? 'Light theme' : 'Dark theme'"></span></button>
+          <button @click="$store.app.logout()"><i class="bi bi-box-arrow-right"></i> Sign out</button>
+        </div>
+      </div>
+    </div>
+  </header>
+  <nav class="mobile-nav">
+    <a href="#/home" :class="$store.app.route.name === 'home' && 'active'">Home</a>
+    <a :href="`#/library/${$store.app.libraryId}`" :class="$store.app.route.name === 'library' && 'active'">Library</a>
+    <a href="#/stats" :class="$store.app.route.name === 'stats' && 'active'">Stats</a>
+    <template x-if="$store.app.isAdmin"><a href="#/import" :class="$store.app.route.name === 'import' && 'active'">Import</a></template>
+    <template x-if="$store.app.isAdmin"><a href="#/organize" :class="$store.app.route.name === 'organize' && 'active'">Organize</a></template>
+    <template x-if="$store.app.isAdmin"><a href="#/duplicates" :class="$store.app.route.name === 'duplicates' && 'active'">Duplicates <span class="nav-badge" x-show="$store.app.duplicateCount" x-text="$store.app.duplicateCount"></span></a></template>
+    <template x-if="$store.app.isAdmin"><a href="#/settings/libraries" :class="$store.app.route.name === 'settings' && 'active'">Settings</a></template>
+  </nav>
+
+  <template x-for="key in [$store.app.routeKey]" :key="key">
+  <main>
+
+    <!-- ============================================================ no library -->
+    <template x-if="!$store.app.libraries.length && !['settings'].includes($store.app.route.name)">
+      <div class="page"><div class="empty">
+        <i class="bi bi-collection"></i>
+        <h2 class="h5" style="color:var(--text)">No libraries yet</h2>
+        <p x-show="$store.app.isAdmin">Point Audivault at a folder of audiobooks to get started.</p>
+        <p x-show="!$store.app.isAdmin">Ask an administrator to give you access to a library.</p>
+        <a href="#/settings/libraries" class="btn btn-accent" x-show="$store.app.isAdmin">Add a library</a>
+      </div></div>
+    </template>
+
+    <!-- ============================================================ home -->
+    <template x-if="$store.app.route.name === 'home' && $store.app.libraries.length">
+      <div class="page" x-data="homeView()">
+        <div x-show="loading" class="py-5 text-center"><div class="spinner-border"></div></div>
+        <template x-if="!loading && !shelves.length">
+          <div class="empty"><i class="bi bi-inboxes"></i>This library is empty. <span x-show="$store.app.isAdmin">Run a scan from <a href="#/settings/libraries">Settings</a> or <a href="#/import">import</a> some books.</span></div>
+        </template>
+        <template x-for="shelf in shelves" :key="shelf.id">
+          <section class="mb-4">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <h2 class="section-title" x-text="shelf.label"></h2>
+              <span class="text-muted small" x-text="shelf.total + ' total'"></span>
+            </div>
+            <div class="shelf" x-html="shelf.entities.map(e => shelf.type === 'series' ? seriesCard(e) : shelf.type === 'authors' ? authorCard(e) : bookCard(e)).join('')"></div>
+          </section>
+        </template>
+      </div>
+    </template>
+
+    <!-- ============================================================ stats -->
+    <template x-if="$store.app.route.name === 'stats' && $store.app.libraries.length">
+      <div class="page" x-data="statsView()">
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+          <h1 class="page-title me-3">Stats</h1>
+          <div class="nav-tabs-ui mb-0 border-0">
+            <button type="button" :class="tab === 'library' && 'active'" @click="setTab('library')">Library</button>
+            <button type="button" :class="tab === 'you' && 'active'" @click="setTab('you')">Your listening</button>
+          </div>
+          <span class="text-muted small ms-auto" x-show="tab === 'library' && $store.app.library" x-text="$store.app.library.name"></span>
+        </div>
+        <div x-show="loading" class="py-5 text-center"><div class="spinner-border"></div></div>
+
+        <div x-show="!loading && tab === 'library'">
+          <template x-if="libraryStats && !libraryStats.totalItems">
+            <div class="empty"><i class="bi bi-bar-chart"></i>This library has no books yet.</div>
+          </template>
+          <template x-if="libraryStats && libraryStats.totalItems">
+            <div>
+              <div class="stat-cards">
+                <div class="stat-card"><div class="k">Books</div><div class="v" x-text="libraryStats.totalItems"></div></div>
+                <div class="stat-card"><div class="k">Authors</div><div class="v" x-text="libraryStats.totalAuthors"></div></div>
+                <div class="stat-card"><div class="k">Genres</div><div class="v" x-text="libraryStats.totalGenres"></div></div>
+                <div class="stat-card"><div class="k">Narrators</div><div class="v" x-text="libraryStats.totalNarrators"></div></div>
+                <div class="stat-card"><div class="k">Total length</div><div class="v" x-text="fmt.span(libraryStats.totalDuration)"></div></div>
+                <div class="stat-card"><div class="k">Average length</div><div class="v" x-text="fmt.duration(libraryStats.avgDuration)"></div></div>
+                <div class="stat-card"><div class="k">Library size</div><div class="v" x-text="fmt.size(libraryStats.totalSize)"></div></div>
+                <div class="stat-card"><div class="k">Audio files</div><div class="v" x-text="libraryStats.numAudioTracks"></div></div>
+                <div class="stat-card">
+                  <div class="k">Longest book</div>
+                  <div class="v" x-text="fmt.duration(libraryStats.longestItems[0].duration)"></div>
+                  <a class="s" :href="`#/item/${libraryStats.longestItems[0].id}`" x-text="libraryStats.longestItems[0].title"></a>
+                </div>
+              </div>
+              <div class="stat-grid">
+                <section class="panel">
+                  <div class="panel-head"><h2 class="section-title">Longest books</h2></div>
+                  <div class="panel-body stat-list">
+                    <template x-for="book in libraryStats.longestItems" :key="book.id">
+                      <div>
+                        <div class="stat-row-top">
+                          <a class="text-truncate" :href="`#/item/${book.id}`" x-text="book.title"></a>
+                          <span class="stat-row-value" x-text="fmt.duration(book.duration)"></span>
+                        </div>
+                        <div class="stat-bar"><span :style="`width:${pct(book.duration, libraryStats.longestItems, 'duration')}%`"></span></div>
+                      </div>
+                    </template>
+                  </div>
+                </section>
+                <section class="panel">
+                  <div class="panel-head"><h2 class="section-title">Largest books</h2></div>
+                  <div class="panel-body stat-list">
+                    <template x-for="book in libraryStats.largestItems" :key="book.id">
+                      <div>
+                        <div class="stat-row-top">
+                          <a class="text-truncate" :href="`#/item/${book.id}`" x-text="book.title"></a>
+                          <span class="stat-row-value" x-text="fmt.size(book.size)"></span>
+                        </div>
+                        <div class="stat-bar"><span :style="`width:${pct(book.size, libraryStats.largestItems, 'size')}%`"></span></div>
+                      </div>
+                    </template>
+                  </div>
+                </section>
+                <section class="panel">
+                  <div class="panel-head"><h2 class="section-title">Genres</h2></div>
+                  <div class="panel-body stat-list">
+                    <p class="text-muted small mb-0" x-show="!libraryStats.genresWithCount.length">No genres yet.</p>
+                    <template x-for="row in libraryStats.genresWithCount" :key="row.genre">
+                      <div>
+                        <div class="stat-row-top">
+                          <a class="text-truncate" :href="libraryFilter('genres', row.genre)" x-text="row.genre"></a>
+                          <span class="stat-row-value" x-text="countLabel(row.count, 'book')"></span>
+                        </div>
+                        <div class="stat-bar"><span :style="`width:${pct(row.count, libraryStats.genresWithCount, 'count')}%`"></span></div>
+                      </div>
+                    </template>
+                  </div>
+                </section>
+                <section class="panel">
+                  <div class="panel-head"><h2 class="section-title">Authors</h2></div>
+                  <div class="panel-body stat-list">
+                    <p class="text-muted small mb-0" x-show="!libraryStats.authorsWithCount.length">No authors yet.</p>
+                    <template x-for="row in libraryStats.authorsWithCount" :key="row.id">
+                      <div>
+                        <div class="stat-row-top">
+                          <a class="text-truncate" :href="`#/author/${row.id}`" x-text="row.name"></a>
+                          <span class="stat-row-value" x-text="countLabel(row.count, 'book')"></span>
+                        </div>
+                        <div class="stat-bar"><span :style="`width:${pct(row.count, libraryStats.authorsWithCount, 'count')}%`"></span></div>
+                      </div>
+                    </template>
+                  </div>
+                </section>
+                <section class="panel">
+                  <div class="panel-head"><h2 class="section-title">Narrators</h2></div>
+                  <div class="panel-body stat-list">
+                    <p class="text-muted small mb-0" x-show="!libraryStats.narratorsWithCount.length">No narrators yet.</p>
+                    <template x-for="row in libraryStats.narratorsWithCount" :key="row.name">
+                      <div>
+                        <div class="stat-row-top">
+                          <a class="text-truncate" :href="libraryFilter('narrators', row.name)" x-text="row.name"></a>
+                          <span class="stat-row-value" x-text="countLabel(row.count, 'book')"></span>
+                        </div>
+                        <div class="stat-bar"><span :style="`width:${pct(row.count, libraryStats.narratorsWithCount, 'count')}%`"></span></div>
+                      </div>
+                    </template>
+                  </div>
+                </section>
+              </div>
+            </div>
+          </template>
+        </div>
+
+        <div x-show="!loading && tab === 'you'">
+          <template x-if="listening && !listening.totalTime">
+            <div class="empty"><i class="bi bi-headphones"></i>No listening history yet. Time you spend playing books shows up here.</div>
+          </template>
+          <template x-if="listening && listening.totalTime">
+            <div>
+              <div class="stat-windows" role="tablist" aria-label="Listening period">
+                <template x-for="w in windows" :key="w.id">
+                  <button type="button" class="stat-window" :class="windowId === w.id && 'active'" :title="w.label" :aria-pressed="windowId === w.id" @click="windowId = w.id">
+                    <span class="stat-window-label" x-text="w.short"></span>
+                    <span class="stat-window-value" x-text="fmt.span(listening.windows[w.id].time)"></span>
+                  </button>
+                </template>
+              </div>
+              <div class="stat-cards">
+                <div class="stat-card"><div class="k">Listened</div><div class="v" x-text="fmt.span(current().time)"></div></div>
+                <div class="stat-card"><div class="k">Books</div><div class="v" x-text="current().booksListened"></div></div>
+                <div class="stat-card"><div class="k">Finished</div><div class="v" x-text="current().booksFinished"></div></div>
+              </div>
+              <p class="text-muted" x-show="periodEmpty()">No listening in this period.</p>
+              <div class="stat-grid" x-show="!periodEmpty()">
+                <section class="panel">
+                  <div class="panel-head"><h2 class="section-title">Books</h2></div>
+                  <div class="panel-body stat-list">
+                    <p class="text-muted small mb-0" x-show="!current().books.length">No books in this period.</p>
+                    <template x-for="book in current().books" :key="book.id">
+                      <div>
+                        <div class="stat-row-top">
+                          <a class="stat-book" :href="`#/item/${book.id}`">
+                            <img x-show="book.coverPath" :src="cover(book.id)" alt="">
+                            <span class="ph" x-show="!book.coverPath"><i class="bi bi-book"></i></span>
+                            <span class="min-w-0">
+                              <span class="d-block text-truncate" x-text="book.title"></span>
+                              <span class="d-block text-truncate text-muted small" x-show="book.author" x-text="book.author"></span>
+                            </span>
+                          </a>
+                          <span class="stat-row-value" x-text="fmt.duration(book.time)"></span>
+                        </div>
+                        <div class="stat-bar"><span :style="`width:${pct(book.time, current().books, 'time')}%`"></span></div>
+                      </div>
+                    </template>
+                  </div>
+                </section>
+                <section class="panel">
+                  <div class="panel-head"><h2 class="section-title">Genres</h2></div>
+                  <div class="panel-body stat-list">
+                    <p class="text-muted small mb-0" x-show="!current().genres.length">No genres in this period.</p>
+                    <template x-for="row in current().genres" :key="row.genre">
+                      <div>
+                        <div class="stat-row-top">
+                          <a class="text-truncate" :href="libraryFilter('genres', row.genre)" x-text="row.genre"></a>
+                          <span class="stat-row-value" x-text="fmt.duration(row.time)"></span>
+                        </div>
+                        <div class="stat-bar"><span :style="`width:${pct(row.time, current().genres, 'time')}%`"></span></div>
+                      </div>
+                    </template>
+                  </div>
+                </section>
+                <section class="panel">
+                  <div class="panel-head"><h2 class="section-title">Authors</h2></div>
+                  <div class="panel-body stat-list">
+                    <p class="text-muted small mb-0" x-show="!current().authors.length">No authors in this period.</p>
+                    <template x-for="row in current().authors" :key="row.name">
+                      <div>
+                        <div class="stat-row-top">
+                          <a class="text-truncate" x-show="row.id" :href="`#/author/${row.id}`" x-text="row.name"></a>
+                          <span class="text-truncate" x-show="!row.id" x-text="row.name"></span>
+                          <span class="stat-row-value" x-text="fmt.duration(row.time)"></span>
+                        </div>
+                        <div class="stat-bar"><span :style="`width:${pct(row.time, current().authors, 'time')}%`"></span></div>
+                      </div>
+                    </template>
+                  </div>
+                </section>
+                <section class="panel">
+                  <div class="panel-head"><h2 class="section-title">Narrators</h2></div>
+                  <div class="panel-body stat-list">
+                    <p class="text-muted small mb-0" x-show="!current().narrators.length">No narrators in this period.</p>
+                    <template x-for="row in current().narrators" :key="row.name">
+                      <div>
+                        <div class="stat-row-top">
+                          <a class="text-truncate" :href="libraryFilter('narrators', row.name)" x-text="row.name"></a>
+                          <span class="stat-row-value" x-text="fmt.duration(row.time)"></span>
+                        </div>
+                        <div class="stat-bar"><span :style="`width:${pct(row.time, current().narrators, 'time')}%`"></span></div>
+                      </div>
+                    </template>
+                  </div>
+                </section>
+                <section class="panel">
+                  <div class="panel-head"><h2 class="section-title">Days of the week</h2></div>
+                  <div class="panel-body stat-list">
+                    <template x-for="row in current().dayOfWeek" :key="row.day">
+                      <div>
+                        <div class="stat-row-top">
+                          <span x-text="dayLabel(row.day)"></span>
+                          <span class="stat-row-value" x-text="fmt.duration(row.time)"></span>
+                        </div>
+                        <div class="stat-bar"><span :style="`width:${pct(row.time, current().dayOfWeek, 'time')}%`"></span></div>
+                      </div>
+                    </template>
+                  </div>
+                </section>
+              </div>
+              <section class="panel mt-3" x-show="listening.recentSessions.length">
+                <div class="panel-head"><h2 class="section-title">Recent sessions</h2></div>
+                <div class="panel-body">
+                  <template x-for="s in listening.recentSessions" :key="s.id">
+                    <a class="stat-session" :href="`#/item/${s.libraryItemId}`">
+                      <img x-show="s.coverPath" :src="cover(s.libraryItemId)" alt="">
+                      <span class="ph" x-show="!s.coverPath"><i class="bi bi-book"></i></span>
+                      <span class="min-w-0 flex-grow-1">
+                        <span class="d-block text-truncate" x-text="s.displayTitle || 'Untitled'"></span>
+                        <span class="d-block text-truncate text-muted small" x-text="s.displayAuthor"></span>
+                      </span>
+                      <span class="stat-row-value" x-text="fmt.duration(s.timeListening)"></span>
+                      <span class="stat-row-value d-none d-sm-inline" x-text="fmt.date(s.updatedAt)"></span>
+                    </a>
+                  </template>
+                </div>
+              </section>
+            </div>
+          </template>
+        </div>
+      </div>
+    </template>
+
+    <!-- ============================================================ library -->
+    <template x-if="$store.app.route.name === 'library' && $store.app.libraries.length">
+      <div class="page" x-data="libraryView()">
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+          <h1 class="page-title me-3" x-text="$store.app.library ? $store.app.library.name : 'Library'"></h1>
+          <div class="nav-tabs-ui mb-0 border-0">
+            <button :class="tab === 'books' && 'active'" @click="setTab('books')">Books</button>
+            <button :class="tab === 'series' && 'active'" @click="setTab('series')">Series</button>
+            <button :class="tab === 'authors' && 'active'" @click="setTab('authors')">Authors</button>
+            <button :class="tab === 'collections' && 'active'" @click="setTab('collections')">Collections</button>
+          </div>
+        </div>
+
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-3" x-show="tab === 'books'">
+          <span class="text-muted small me-1" x-text="total + ' book' + (total === 1 ? '' : 's')"></span>
+          <template x-if="q"><span class="chip chip-accent">Search: <span x-text="q"></span> <button class="btn btn-sm p-0 ms-1" style="color:inherit" @click="clearSearch()" aria-label="Clear"><i class="bi bi-x"></i></button></span></template>
+          <template x-if="filter"><span class="chip chip-accent"><span x-text="filterLabel"></span> <button class="btn btn-sm p-0 ms-1" style="color:inherit" @click="setFilter()" aria-label="Clear filter"><i class="bi bi-x"></i></button></span></template>
+          <div class="ms-auto d-flex gap-2 flex-wrap">
+            <button class="btn btn-ghost btn-sm" :class="collapse && 'active'" @click="toggleCollapse()" :disabled="!!filter || !!q"><i class="bi bi-stack"></i> Collapse series</button>
+            <div class="position-relative" @click.outside="menu === 'filter' && (menu = null)">
+              <button class="btn btn-ghost btn-sm" @click="toggleFilterMenu()"><i class="bi bi-funnel"></i> Filter</button>
+              <div class="menu" x-show="menu === 'filter'" x-cloak>
+                <div class="menu-label">Progress</div>
+                <button @click="setFilter('progress','in-progress','In progress')">In progress</button>
+                <button @click="setFilter('progress','not-started','Not started')">Not started</button>
+                <button @click="setFilter('progress','finished','Finished')">Finished</button>
+                <button @click="setFilter('progress','not-finished','Not finished')">Not finished</button>
+                <div class="menu-label">Missing</div>
+                <template x-for="m in [['cover','Cover'],['description','Description'],['authors','Author'],['series','Series'],['narrators','Narrator'],['asin','ASIN'],['publishedYear','Year']]" :key="m[0]">
+                  <button @click="setFilter('missing', m[0], 'Missing ' + m[1].toLowerCase())" x-text="'No ' + m[1].toLowerCase()"></button>
+                </template>
+                <button @click="setFilter('issues','issues','Has issues')">Has issues</button>
+                <button @click="setFilter('ebooks','ebook','Has ebook')">Has ebook</button>
+                <template x-if="filterData && filterData.genres.length">
+                  <div><div class="menu-label">Genres</div>
+                    <template x-for="g in filterData.genres" :key="g"><button @click="setFilter('genres', g, g)" x-text="g"></button></template></div>
+                </template>
+                <template x-if="filterData && filterData.narrators.length">
+                  <div><div class="menu-label">Narrators</div>
+                    <template x-for="n in filterData.narrators" :key="n"><button @click="setFilter('narrators', n, n)" x-text="n"></button></template></div>
+                </template>
+                <template x-if="filterData && filterData.tags.length">
+                  <div><div class="menu-label">Tags</div>
+                    <template x-for="t in filterData.tags" :key="t"><button @click="setFilter('tags', t, t)" x-text="t"></button></template></div>
+                </template>
+                <template x-if="filterData && filterData.languages.length">
+                  <div><div class="menu-label">Languages</div>
+                    <template x-for="l in filterData.languages" :key="l"><button @click="setFilter('languages', l, l)" x-text="l"></button></template></div>
+                </template>
+              </div>
+            </div>
+            <div class="position-relative" @click.outside="menu === 'sort' && (menu = null)">
+              <button class="btn btn-ghost btn-sm" @click="menu = menu === 'sort' ? null : 'sort'"><i class="bi" :class="desc ? 'bi-sort-down' : 'bi-sort-up'"></i> <span x-text="sortLabel()"></span></button>
+              <div class="menu" x-show="menu === 'sort'" x-cloak>
+                <template x-for="s in sorts" :key="s[0]">
+                  <button :class="sort === s[0] && 'active'" @click="setSort(s[0])"><span x-text="s[1]"></span><i class="bi ms-auto" x-show="sort === s[0]" :class="desc ? 'bi-arrow-down' : 'bi-arrow-up'"></i></button>
+                </template>
+              </div>
+            </div>
+            <template x-if="$store.app.canUpdate">
+              <button class="btn btn-ghost btn-sm" :class="selectMode && 'active'" @click="selectMode = !selectMode; selected = []"><i class="bi bi-check2-square"></i> Select</button>
+            </template>
+          </div>
+        </div>
+
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-3" x-show="tab === 'series'">
+          <span class="text-muted small me-1" x-text="total + ' series'"></span>
+          <div class="ms-auto position-relative" @click.outside="menu === 'seriesSort' && (menu = null)">
+            <button class="btn btn-ghost btn-sm" @click="menu = menu === 'seriesSort' ? null : 'seriesSort'"><i class="bi" :class="seriesDesc ? 'bi-sort-down' : 'bi-sort-up'"></i> <span x-text="seriesSortLabel()"></span></button>
+            <div class="menu" x-show="menu === 'seriesSort'" x-cloak>
+              <template x-for="s in seriesSorts" :key="s[0]">
+                <button :class="seriesSort === s[0] && 'active'" @click="setSeriesSort(s[0])"><span x-text="s[1]"></span><i class="bi ms-auto" x-show="seriesSort === s[0]" :class="seriesDesc ? 'bi-arrow-down' : 'bi-arrow-up'"></i></button>
+              </template>
+            </div>
+          </div>
+        </div>
+
+        <template x-if="selectMode">
+          <div class="panel mb-3"><div class="panel-body d-flex flex-wrap align-items-center gap-2">
+            <span><strong x-text="selected.length"></strong> selected</span>
+            <button class="btn btn-accent btn-sm ms-auto" :disabled="!selected.length" @click="quickMatchSelected()"><i class="bi bi-magic"></i> Quick match</button>
+            <button class="btn btn-ghost btn-sm" @click="selected = items.filter(i => !i.collapsedSeries).map(i => i.id)">Select all loaded</button>
+          </div></div>
+        </template>
+
+        <!-- books -->
+        <template x-if="tab === 'books'">
+          <div>
+            <div class="book-grid" x-ref="booksGrid" x-show="!selectMode"></div>
+            <template x-if="selectMode">
+              <div class="book-grid">
+                <template x-for="i in items.filter(i => !i.collapsedSeries)" :key="i.id">
+                  <div class="book-card" @click="toggleSelect(i.id)" role="checkbox" :aria-checked="selected.includes(i.id)">
+                    <div class="cover" :style="selected.includes(i.id) ? 'border-color: var(--accent); border-width: 3px' : ''">
+                      <img x-show="i.media.coverPath" :src="$store.app.cover(i, true)" alt="" loading="lazy" decoding="async">
+                      <div class="cover-ph" x-show="!i.media.coverPath" x-text="i.media.metadata.title"></div>
+                      <span class="badge-done" x-show="selected.includes(i.id)" style="background:var(--accent);color:var(--accent-ink)"><i class="bi bi-check-lg"></i></span>
+                    </div>
+                    <div class="book-meta"><div class="book-title" x-text="i.media.metadata.title"></div></div>
+                  </div>
+                </template>
+              </div>
+            </template>
+            <template x-if="!loading && done && !items.length"><div class="empty"><i class="bi bi-search"></i>No books match.</div></template>
+          </div>
+        </template>
+        <template x-if="tab === 'series'">
+          <div>
+            <div class="book-grid" x-ref="seriesGrid"></div>
+            <template x-if="!loading && done && !series.length"><div class="empty"><i class="bi bi-collection"></i>No series found.</div></template>
+          </div>
+        </template>
+        <template x-if="tab === 'authors'">
+          <div>
+            <div class="book-grid" x-ref="authorsGrid"></div>
+            <template x-if="!loading && done && !authors.length"><div class="empty"><i class="bi bi-people"></i>No authors found.</div></template>
+          </div>
+        </template>
+        <template x-if="tab === 'collections'">
+          <div>
+            <template x-for="c in collections" :key="c.id">
+              <section class="mb-4">
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                  <h2 class="section-title" x-text="c.name"></h2>
+                  <span class="text-muted small" x-text="c.books.length + ' books'"></span>
+                </div>
+                <p class="text-muted small" x-show="c.description" x-text="c.description"></p>
+                <div class="shelf" x-html="c.books.map(b => bookCard(b)).join('')"></div>
+              </section>
+            </template>
+            <template x-if="!loading && done && !collections.length"><div class="empty"><i class="bi bi-bookmark-star"></i>No collections yet. Add books to a collection from a book's page.</div></template>
+          </div>
+        </template>
+        <div x-ref="sentinel" class="py-4 text-center"><div class="spinner-border spinner-border-sm" x-show="loading"></div></div>
+      </div>
+    </template>
+
+    <!-- ============================================================ item -->
+    <template x-if="$store.app.route.name === 'item'">
+      <div class="page" x-data="itemView()">
+        <div x-show="loading" class="py-5 text-center"><div class="spinner-border"></div></div>
+        <template x-if="item">
+          <div>
+            <div class="row g-4">
+              <div class="col-md-4 col-lg-3">
+                <div class="detail-cover mx-auto">
+                  <img x-show="item.media.coverPath" :src="$store.app.cover(item)" alt="Cover">
+                  <div class="cover-ph h-100 d-grid p-3" style="place-items:center;text-align:center" x-show="!item.media.coverPath" x-text="md.title"></div>
+                </div>
+                <template x-if="progress">
+                  <div class="mt-3">
+                    <div class="d-flex justify-content-between small mb-1">
+                      <span class="text-muted" x-text="progress.isFinished ? 'Finished' : 'Progress'"></span>
+                      <span x-text="progress.isFinished ? fmt.date(progress.finishedAt) : pct + '% · ' + fmt.duration(item.media.duration - progress.currentTime) + ' left'"></span>
+                    </div>
+                    <div class="bar"><span :style="`width:${pct}%`"></span></div>
+                  </div>
+                </template>
+              </div>
+              <div class="col-md-8 col-lg-9">
+                <div class="d-flex flex-wrap gap-2 mb-2">
+                  <template x-for="s in md.series" :key="s.id">
+                    <a class="chip chip-accent" :href="`#/series/${s.id}`"><i class="bi bi-collection"></i> <span x-text="s.name + (s.sequence ? ' #' + s.sequence : '')"></span></a>
+                  </template>
+                  <span class="chip chip-danger" x-show="item.isMissing">Missing from disk</span>
+                  <span class="chip chip-lock" x-show="item.locked" :title="item.lockReason"><i class="bi bi-lock-fill"></i> Locked</span>
+                  <span class="chip" x-show="md.explicit">Explicit</span>
+                  <span class="chip" x-show="md.abridged">Abridged</span>
+                </div>
+                <h1 class="detail-title" x-text="md.title"></h1>
+                <p class="h5 text-muted fw-normal mb-2" x-show="md.subtitle" x-text="md.subtitle"></p>
+                <p class="mb-3">
+                  <span class="text-muted">by </span>
+                  <template x-for="(a, idx) in md.authors" :key="a.id"><span><a :href="`#/author/${a.id}`" x-text="a.name"></a><span x-show="idx < md.authors.length - 1">, </span></span></template>
+                  <span x-show="!md.authors.length" class="text-muted">Unknown author</span>
+                </p>
+
+                <div class="d-flex flex-wrap gap-2 mb-4">
+                  <button class="btn btn-accent" @click="play()" x-show="item.media.numTracks" :disabled="$store.player.loading">
+                    <i class="bi bi-play-fill"></i> <span x-text="progress && !progress.isFinished && progress.currentTime > 0 ? 'Resume' : 'Play'"></span>
+                  </button>
+                  <button class="btn btn-ghost" @click="setFinished(!(progress && progress.isFinished))">
+                    <i class="bi" :class="progress && progress.isFinished ? 'bi-arrow-counterclockwise' : 'bi-check2-circle'"></i>
+                    <span x-text="progress && progress.isFinished ? 'Mark unfinished' : 'Mark finished'"></span>
+                  </button>
+                  <template x-if="$store.app.canUpdate"><button class="btn btn-ghost" @click="edit()"><i class="bi bi-pencil"></i> Edit</button></template>
+                  <template x-if="$store.app.canUpdate"><button class="btn btn-ghost" @click="edit('match')"><i class="bi bi-search"></i> Match</button></template>
+                  <div class="position-relative" x-data="{ open: false }" @click.outside="open = false">
+                    <button class="btn btn-ghost btn-icon" @click="open = !open" aria-label="More"><i class="bi bi-three-dots"></i></button>
+                    <div class="menu" x-show="open" x-cloak @click="open = false">
+                      <template x-if="$store.app.canUpdate"><button @click="quickMatch()"><i class="bi bi-magic"></i> Quick match</button></template>
+                      <template x-if="$store.app.isAdmin"><button @click="organize()"><i class="bi bi-folder-symlink"></i> Rename folder</button></template>
+                      <template x-if="$store.app.isAdmin"><button @click="rescan()"><i class="bi bi-arrow-repeat"></i> Rescan files</button></template>
+                      <button @click="$store.app.modal = { type: 'collection', item }"><i class="bi bi-bookmark-plus"></i> Add to collection</button>
+                      <button @click="download()"><i class="bi bi-download"></i> Download</button>
+                      <button x-show="progress" @click="resetProgress()"><i class="bi bi-x-circle"></i> Discard progress</button>
+                      <template x-if="$store.app.canDelete"><button @click="remove(false)"><i class="bi bi-trash"></i> Remove from library</button></template>
+                      <template x-if="$store.app.canDelete && !item.locked"><button @click="remove(true)" style="color:var(--danger)"><i class="bi bi-trash3-fill"></i> Delete files</button></template>
+                      <template x-if="$store.app.canDelete && item.locked"><button disabled :title="item.lockReason" style="opacity:.6"><i class="bi bi-lock-fill"></i> Delete files (locked)</button></template>
+                    </div>
+                  </div>
+                </div>
+
+                <dl class="meta-grid mb-4">
+                  <template x-if="md.narrators.length"><dt>Narrated by</dt></template>
+                  <template x-if="md.narrators.length"><dd x-text="md.narrators.join(', ')"></dd></template>
+                  <dt>Duration</dt><dd x-text="fmt.duration(item.media.duration) + (item.media.numTracks > 1 ? ` · ${item.media.numTracks} files` : '')"></dd>
+                  <template x-if="md.publishedYear"><dt>Published</dt></template>
+                  <template x-if="md.publishedYear"><dd x-text="md.publishedYear + (md.publisher ? ' · ' + md.publisher : '')"></dd></template>
+                  <template x-if="md.genres.length"><dt>Genres</dt></template>
+                  <template x-if="md.genres.length"><dd class="d-flex flex-wrap gap-1">
+                    <template x-for="g in md.genres" :key="g"><a class="chip" :href="`#/library/${item.libraryId}?tab=books&filter=genres.${encodeURIComponent(fmt.b64(g))}&label=${encodeURIComponent(g)}`" x-text="g"></a></template>
+                  </dd></template>
+                  <template x-if="item.media.tags.length"><dt>Tags</dt></template>
+                  <template x-if="item.media.tags.length"><dd class="d-flex flex-wrap gap-1"><template x-for="t in item.media.tags" :key="t"><span class="chip" x-text="t"></span></template></dd></template>
+                  <template x-if="md.language"><dt>Language</dt></template>
+                  <template x-if="md.language"><dd x-text="md.language"></dd></template>
+                  <template x-if="md.asin || md.isbn"><dt>Identifiers</dt></template>
+                  <template x-if="md.asin || md.isbn"><dd class="mono" x-text="[md.asin && 'ASIN ' + md.asin, md.isbn && 'ISBN ' + md.isbn].filter(Boolean).join(' · ')"></dd></template>
+                  <dt>Size</dt><dd x-text="fmt.size(item.size)"></dd>
+                  <template x-if="$store.app.isAdmin"><dt>Path</dt></template>
+                  <template x-if="$store.app.isAdmin"><dd class="mono" x-text="item.path"></dd></template>
+                </dl>
+
+                <template x-if="md.description">
+                  <div class="mb-4">
+                    <div class="description" :class="!expanded && md.descriptionPlain.length > 600 && 'clamped'" x-text="md.descriptionPlain"></div>
+                    <button class="btn btn-link px-0" x-show="md.descriptionPlain.length > 600" @click="expanded = !expanded" x-text="expanded ? 'Show less' : 'Read more'"></button>
+                  </div>
+                </template>
+
+                <div class="nav-tabs-ui">
+                  <button :class="tab === 'chapters' && 'active'" @click="tab = 'chapters'">Chapters <span class="text-muted" x-text="`(${item.media.chapters.length})`"></span></button>
+                  <button :class="tab === 'files' && 'active'" @click="tab = 'files'">Files <span class="text-muted" x-text="`(${item.libraryFiles.length})`"></span></button>
+                </div>
+                <template x-if="tab === 'chapters'">
+                  <div class="panel">
+                    <table class="table table-dark-ui table-hover">
+                      <thead><tr><th style="width:50px">#</th><th>Title</th><th class="text-end">Start</th><th class="text-end d-none d-sm-table-cell">Length</th></tr></thead>
+                      <tbody>
+                        <template x-for="(c, idx) in item.media.chapters" :key="idx">
+                          <tr class="chapter-row" :class="currentChapter === idx && 'current'" style="cursor:pointer" @click="play(c.start)">
+                            <td class="text-muted" x-text="idx + 1"></td><td x-text="c.title"></td>
+                            <td class="text-end mono" x-text="fmt.clock(c.start)"></td>
+                            <td class="text-end mono d-none d-sm-table-cell" x-text="fmt.clock(c.end - c.start)"></td>
+                          </tr>
+                        </template>
+                      </tbody>
+                    </table>
+                    <div class="p-3 text-muted" x-show="!item.media.chapters.length">No chapters.</div>
+                  </div>
+                </template>
+                <template x-if="tab === 'files'">
+                  <div class="panel table-responsive">
+                    <table class="table table-dark-ui">
+                      <thead><tr><th>File</th><th class="d-none d-md-table-cell">Format</th><th class="text-end">Duration</th><th class="text-end">Size</th></tr></thead>
+                      <tbody>
+                        <template x-for="f in item.media.audioFiles" :key="f.ino">
+                          <tr :style="f.exclude ? 'opacity:.6' : ''">
+                            <td><span class="mono" x-text="f.metadata.relPath"></span> <span class="chip" x-show="f.exclude">excluded</span></td>
+                            <td class="d-none d-md-table-cell text-muted" x-text="[f.codec, f.bitRate ? Math.round(f.bitRate / 1000) + ' kbps' : '', f.channelLayout].filter(Boolean).join(' · ')"></td>
+                            <td class="text-end mono" x-text="fmt.clock(f.duration)"></td>
+                            <td class="text-end" x-text="fmt.size(f.metadata.size)"></td>
+                          </tr>
+                        </template>
+                        <template x-for="f in item.libraryFiles.filter(f => f.fileType !== 'audio')" :key="f.ino">
+                          <tr><td><span class="mono" x-text="f.metadata.relPath"></span> <span class="chip" x-text="f.fileType"></span></td><td class="d-none d-md-table-cell"></td><td></td><td class="text-end" x-text="fmt.size(f.metadata.size)"></td></tr>
+                        </template>
+                      </tbody>
+                    </table>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+    </template>
+
+    <!-- ============================================================ series -->
+    <template x-if="$store.app.route.name === 'series'">
+      <div class="page" x-data="seriesView()">
+        <div x-show="loading" class="py-5 text-center"><div class="spinner-border"></div></div>
+        <template x-if="series">
+          <div>
+            <div class="d-flex flex-wrap align-items-center gap-3 mb-4">
+              <div>
+                <div class="text-muted small text-uppercase fw-semibold" style="letter-spacing:.08em">Series</div>
+                <h1 class="page-title" x-show="!editing" x-text="series.name"></h1>
+                <form x-show="editing" class="d-flex gap-2" @submit.prevent="save()"><input class="form-control" x-model="name"><button class="btn btn-accent">Save</button><button type="button" class="btn btn-ghost" @click="editing = false">Cancel</button></form>
+                <div class="text-muted" x-text="`${series.books.length} books · ${fmt.duration(series.totalDuration)}`"></div>
+              </div>
+              <div class="ms-auto d-flex gap-2">
+                <button class="btn btn-accent" @click="playNext()"><i class="bi bi-play-fill"></i> Play next unfinished</button>
+                <button class="btn btn-ghost" @click="setFinished(!(series.progress && series.progress.isFinished))" :disabled="finishing || !series.books.length">
+                  <i class="bi" :class="series.progress && series.progress.isFinished ? 'bi-arrow-counterclockwise' : 'bi-check2-circle'"></i>
+                  <span x-text="series.progress && series.progress.isFinished ? 'Mark unfinished' : 'Mark series finished'"></span>
+                </button>
+                <template x-if="$store.app.isAdmin"><button class="btn btn-ghost" @click="matchSeries()"><i class="bi bi-magic"></i> Match series</button></template>
+                <template x-if="$store.app.canUpdate"><button class="btn btn-ghost" @click="editing = true"><i class="bi bi-pencil"></i> Rename</button></template>
+              </div>
+            </div>
+            <div class="book-grid" x-html="series.books.map(b => bookCard(b, { sequence: b.sequence })).join('')"></div>
+          </div>
+        </template>
+      </div>
+    </template>
+
+    <!-- ============================================================ author -->
+    <template x-if="$store.app.route.name === 'author'">
+      <div class="page" x-data="authorView()">
+        <div x-show="loading" class="py-5 text-center"><div class="spinner-border"></div></div>
+        <template x-if="author">
+          <div>
+            <div class="row g-4 mb-4">
+              <div class="col-auto"><div class="avatar" style="width:160px">
+                <img x-show="image()" :src="image()" alt=""><span x-show="!image()" x-text="author.name.split(/\s+/).map(w => w[0]).slice(0,2).join('')"></span>
+              </div></div>
+              <div class="col">
+                <div class="text-muted small text-uppercase fw-semibold" style="letter-spacing:.08em">Author</div>
+                <h1 class="page-title mb-1" x-text="author.name"></h1>
+                <div class="text-muted mb-3" x-text="`${author.libraryItems.length} books` + (author.asin ? ' · ASIN ' + author.asin : '')"></div>
+                <div class="description mb-2" :class="!expanded && (author.description || '').length > 500 && 'clamped'" x-show="author.description" x-text="author.description"></div>
+                <button class="btn btn-link px-0" x-show="(author.description || '').length > 500" @click="expanded = !expanded" x-text="expanded ? 'Show less' : 'Read more'"></button>
+                <template x-if="$store.app.canUpdate">
+                  <div class="d-flex gap-2 mt-2">
+                    <button class="btn btn-ghost btn-sm" @click="match()" :disabled="matching"><span class="spinner-border spinner-border-sm me-1" x-show="matching"></span><i class="bi bi-search" x-show="!matching"></i> Fetch info from Audible</button>
+                    <button class="btn btn-ghost btn-sm" @click="editing = !editing"><i class="bi bi-pencil"></i> Edit</button>
+                  </div>
+                </template>
+                <template x-if="editing">
+                  <form class="panel mt-3" @submit.prevent="save()"><div class="panel-body">
+                    <div class="row g-2">
+                      <div class="col-md-8"><label class="form-label">Name</label><input class="form-control" x-model="form.name"></div>
+                      <div class="col-md-4"><label class="form-label">ASIN</label><input class="form-control mono" x-model="form.asin"></div>
+                      <div class="col-12"><label class="form-label">Description</label><textarea class="form-control" rows="4" x-model="form.description"></textarea></div>
+                    </div>
+                    <p class="form-text">Renaming to an existing author's name merges the two.</p>
+                    <button class="btn btn-accent btn-sm">Save</button>
+                  </div></form>
+                </template>
+              </div>
+            </div>
+            <template x-for="s in author.series" :key="s.id">
+              <section class="mb-4">
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                  <h2 class="section-title"><a :href="`#/series/${s.id}`" style="color:var(--text)" x-text="s.name"></a></h2>
+                  <span class="text-muted small" x-text="s.items.length + ' books'"></span>
+                </div>
+                <div class="shelf" x-html="s.items.map(b => bookCard(b)).join('')"></div>
+              </section>
+            </template>
+            <template x-if="standalone.length">
+              <section class="mb-4">
+                <h2 class="section-title mb-2" x-text="author.series.length ? 'Other books' : 'Books'"></h2>
+                <div class="book-grid" x-html="standalone.map(b => bookCard(b)).join('')"></div>
+              </section>
+            </template>
+          </div>
+        </template>
+      </div>
+    </template>
+
+    <!-- ============================================================ import -->
+    <template x-if="$store.app.route.name === 'import' && $store.app.isAdmin && $store.app.libraries.length">
+      <div class="page" x-data="importView()">
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+          <h1 class="page-title me-auto">Import</h1>
+          <select class="form-select form-select-sm w-auto" x-model="libId" @change="load()">
+            <template x-for="l in $store.app.libraries" :key="l.id"><option :value="l.id" x-text="l.name" :selected="l.id === libId"></option></template>
+          </select>
+          <select class="form-select form-select-sm w-auto" x-model="filter" aria-label="Show">
+            <option value="pending">Not imported</option>
+            <option value="review">Needs review</option>
+            <option value="imported">Already imported</option>
+            <option value="skipped">Already in the library</option>
+            <option value="all">All</option>
+          </select>
+          <select class="form-select form-select-sm w-auto" x-model="mode" aria-label="Import mode">
+            <option value="move">Move files</option><option value="copy">Copy files</option>
+          </select>
+          <button class="btn btn-ghost btn-sm" @click="load(true)"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
+          <button type="button" class="btn btn-accent btn-sm" :disabled="!importableCandidates.length || batching" @click="importAll()">
+            <span class="spinner-border spinner-border-sm me-1" style="color:inherit" x-show="batching"></span>
+            <span x-text="importableCandidates.length ? 'Import all shown (' + importableCandidates.length + ')' : 'Import all shown'"></span>
+          </button>
+          <button type="button" class="btn btn-ghost btn-sm" x-show="lib && lib.settings.autoImport" @click="runAutoImport()"><i class="bi bi-magic"></i> Run auto-import</button>
+        </div>
+        <div class="small mb-2" x-show="lib && lib.settings.autoImport"><span class="chip chip-success"><i class="bi bi-magic"></i> Auto-import on</span>
+          <span class="text-muted" x-text="'Confident matches are ' + (lib && lib.settings.importMode === 'copy' ? 'copied' : 'moved') + ' into the library automatically.'"></span></div>
+        <p class="text-muted mb-4">Books found in <span class="mono" x-text="importFolder || '(not set)'"></span> are matched, then moved into the library <span x-text="lib && lib.settings.organizeOnImport === false ? 'keeping their current folder names' : 'as'"></span> <span class="mono" x-show="!(lib && lib.settings.organizeOnImport === false)" x-text="template"></span>.</p>
+
+        <template x-if="stale && !loading">
+          <div class="panel mb-3" style="border-color:var(--accent)"><div class="panel-body d-flex flex-wrap align-items-center gap-2">
+            <i class="bi bi-bell" style="color:var(--accent)"></i>
+            <span>The import folder changed (<span x-text="stale"></span> item<span x-show="stale !== 1">s</span> now). Refreshing clears unsaved edits below.</span>
+            <button type="button" class="btn btn-accent btn-sm ms-auto" @click="load(true)"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
+          </div></div>
+        </template>
+        <div x-show="loading" class="py-5 text-center"><div class="spinner-border"></div><div class="text-muted mt-2">Reading files…</div></div>
+        <template x-if="!loading && error">
+          <div class="empty"><i class="bi bi-folder-x"></i><span x-text="error"></span>. <a :href="`#/settings/libraries`">Set an import folder</a> in the library settings.</div>
+        </template>
+        <template x-if="!loading && !error && !candidates.length">
+          <div class="empty"><i class="bi bi-inbox"></i>Nothing to import. Drop book folders or single audio files into the import folder.</div>
+        </template>
+        <template x-if="!loading && !error && filter === 'pending' && skippedCandidates.length">
+          <div class="panel mb-3"><div class="panel-body d-flex flex-wrap align-items-center gap-2">
+            <i class="bi bi-check2-circle"></i>
+            <span x-text="skippedCandidates.length + (skippedCandidates.length === 1 ? ' book is' : ' books are') + ' already in the library, so nothing was copied over those folders. The import copies were left where they are.'"></span>
+            <button type="button" class="btn btn-ghost btn-sm ms-auto" @click="filter = 'skipped'">Show them</button>
+          </div></div>
+        </template>
+        <template x-if="!loading && !error && candidates.length && filter === 'pending' && !visibleCandidates.length">
+          <div class="empty"><i class="bi bi-check2-circle"></i>Nothing left to import. The other books are already imported or already in the library.</div>
+        </template>
+
+        <template x-for="c in visibleCandidates" :key="c.id">
+          <div class="panel mb-3">
+            <div class="panel-head">
+              <div class="min-w-0">
+                <div class="mono text-truncate" x-text="c.relPath"></div>
+                <div class="small text-muted" x-text="`${c.numAudioFiles} audio file${c.numAudioFiles === 1 ? '' : 's'} · ${fmt.duration(c.duration)} · ${fmt.size(c.size)}` + (c.hasCover ? ' · has cover' : '')"></div>
+                <div class="small mt-1" x-show="c.autoImport && c.autoImport.status === 'review'"><span class="chip chip-warning">Needs review</span> <span x-text="c.autoImport && c.autoImport.reason"></span></div>
+                <div class="small mt-1 d-flex flex-wrap align-items-center gap-2" x-show="c.autoImport && c.autoImport.suggestion">
+                  <span class="text-muted" x-text="'Closest match: ' + suggestionLabel(c)"></span>
+                  <button type="button" class="btn btn-ghost btn-sm" @click="useSuggestion(c)">Use this match</button>
+                </div>
+                <div class="small mt-1" x-show="c.autoImport && c.autoImport.status === 'imported'"><span class="chip chip-success">Already imported</span> <span class="mono" x-text="c.autoImport && c.autoImport.to"></span> <span class="text-muted">(the originals were copied, so they're still here)</span></div>
+                <div class="small mt-1" x-show="c.autoImport && c.autoImport.status === 'skipped'"><span class="chip">Already in the library</span> <span x-text="c.autoImport && c.autoImport.reason"></span> <span class="text-muted">Change the title or author below to import this as a separate copy.</span></div>
+                <div class="small mt-1 text-danger" x-show="c.error" x-text="c.error"></div>
+              </div>
+              <button class="btn btn-ghost btn-sm" @click="openSearch(c)"><i class="bi bi-search"></i> Find metadata</button>
+            </div>
+            <div class="panel-body">
+              <div class="row g-3">
+                <template x-if="c.coverUrl">
+                  <div class="col-lg-2 col-md-3 d-none d-md-block">
+                    <div class="cover"><img :src="c.coverUrl" alt="Cover to use"></div>
+                  </div>
+                </template>
+                <div class="col">
+                  <div class="row g-2">
+                    <div class="col-md-6"><label class="form-label">Title</label><input class="form-control" x-model="c.form.title"></div>
+                    <div class="col-md-6"><label class="form-label">Author(s)</label><input class="form-control" x-model="c.form.authors" placeholder="Name & Name"></div>
+                    <div class="col-md-5"><label class="form-label">Series</label><input class="form-control" x-model="c.form.series"></div>
+                    <div class="col-md-2"><label class="form-label">Sequence</label><input class="form-control" x-model="c.form.sequence"></div>
+                    <div class="col-md-5"><label class="form-label">Narrator(s)</label><input class="form-control" x-model="c.form.narrators"></div>
+                    <div class="col-md-4"><label class="form-label">Subtitle</label><input class="form-control" x-model="c.form.subtitle"></div>
+                    <div class="col-md-2"><label class="form-label">Year</label><input class="form-control" x-model="c.form.publishedYear"></div>
+                    <div class="col-md-3"><label class="form-label">ASIN</label><input class="form-control mono" x-model="c.form.asin"></div>
+                    <div class="col-md-3"><label class="form-label">Genres</label><input class="form-control" x-model="c.form.genres"></div>
+                  </div>
+                  <div class="d-flex flex-wrap align-items-center gap-2 mt-3">
+                    <i class="bi bi-arrow-right path-arrow"></i>
+                    <span class="mono" x-text="target(c)"></span>
+                    <button class="btn btn-accent btn-sm ms-auto" :disabled="c.busy || !c.form.title" @click="doImport(c)">
+                      <span class="spinner-border spinner-border-sm me-1" style="color:inherit" x-show="c.busy"></span><i class="bi bi-box-arrow-in-down" x-show="!c.busy"></i> Import
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <!-- provider search modal -->
+        <template x-if="active">
+          <div class="ui-modal">
+            <div class="backdrop" @click="active = null"></div>
+            <div class="modal-content">
+              <div class="modal-header"><h2 class="h5 m-0">Find metadata</h2><button type="button" class="btn-close" data-dismiss @click="active = null" aria-label="Close"></button></div>
+              <div class="modal-body">
+                <form class="row g-2 mb-3" @submit.prevent="search()">
+                  <div class="col-md-3"><select class="form-select" x-model="provider"><template x-for="p in providers" :key="p.value"><option :value="p.value" x-text="p.text" :selected="p.value === provider"></option></template></select></div>
+                  <div class="col-md-4"><input class="form-control" x-model="active.form.title" placeholder="Title or ASIN"></div>
+                  <div class="col-md-3"><input class="form-control" x-model="active.form.authors" placeholder="Author"></div>
+                  <div class="col-md-2 d-grid"><button class="btn btn-accent" :disabled="searching">Search</button></div>
+                </form>
+                <div x-show="searching" class="py-4 text-center"><div class="spinner-border"></div></div>
+                <div class="d-grid gap-2">
+                  <template x-for="(r, idx) in results" :key="idx">
+                    <div class="match-result" @click="pick(r)">
+                      <img :src="r.cover || ''" alt="" x-show="r.cover">
+                      <div class="min-w-0">
+                        <div class="fw-semibold" x-text="r.title + (r.subtitle ? ': ' + r.subtitle : '')"></div>
+                        <div class="small text-muted" x-text="[r.author, r.narrator && 'Narr. ' + r.narrator, r.publishedYear].filter(Boolean).join(' · ')"></div>
+                        <div class="small" x-show="r.series && r.series.length"><span class="chip chip-accent mt-1" x-text="(r.series || []).map(s => s.series + (s.sequence ? ' #' + s.sequence : '')).join(', ')"></span></div>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+    </template>
+
+    <!-- ============================================================ organize -->
+    <template x-if="$store.app.route.name === 'organize' && $store.app.isAdmin && $store.app.libraries.length">
+      <div class="page" x-data="organizeView()">
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+          <h1 class="page-title me-auto">Organize</h1>
+          <select class="form-select form-select-sm w-auto" x-model="libId" @change="resetTemplate(); preview()">
+            <template x-for="l in $store.app.libraries" :key="l.id"><option :value="l.id" x-text="l.name" :selected="l.id === libId"></option></template>
+          </select>
+        </div>
+        <p class="text-muted mb-3">Rename book folders on disk to match their metadata. Review the plan before applying.</p>
+        <div class="panel mb-3"><div class="panel-body">
+          <label class="form-label">Folder template</label>
+          <div class="d-flex flex-wrap gap-2">
+            <input class="form-control mono flex-grow-1" style="min-width:240px" x-model="template" @keydown.enter.prevent="preview()">
+            <button class="btn btn-ghost" @click="preview()" :disabled="loading"><i class="bi bi-eye"></i> Preview</button>
+            <button class="btn btn-ghost" @click="saveTemplate()"><i class="bi bi-save"></i> Save as default</button>
+          </div>
+          <div class="form-text">Tokens: <span class="mono">{author} {series} {sequence} {title} {subtitle} {year} {narrator} {asin}</span>. Text in <span class="mono">[ ]</span> is dropped when a token inside is empty.</div>
+        </div></div>
+
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+          <span><strong x-text="okCount"></strong> folder(s) to rename<span x-show="staleCount">, <strong x-text="staleCount"></strong> leftover</span><span class="text-muted" x-show="skippedCount > 0" x-text="`, ${skippedCount} not renamed`"></span></span>
+          <label class="form-check form-switch ms-3 mb-0"><input class="form-check-input" type="checkbox" x-model="showAll" @change="preview()"> <span class="form-check-label small">Show unchanged</span></label>
+          <button class="btn btn-accent ms-auto" :disabled="!selected.length || running" @click="apply()">
+            <span class="spinner-border spinner-border-sm me-1" style="color:inherit" x-show="running"></span>
+            Apply to <span x-text="selected.length"></span> selected
+          </button>
+        </div>
+        <div x-show="loading" class="py-5 text-center"><div class="spinner-border"></div><div class="text-muted mt-2">Checking folders…</div></div>
+        <div class="panel table-responsive" x-show="!loading && plans.length">
+          <table class="table table-dark-ui">
+            <thead><tr>
+              <th style="width:36px"><input class="form-check-input" type="checkbox" :checked="selected.length && selected.length === actionableCount" @change="toggleAll($event.target.checked)" aria-label="Select all"></th>
+              <th>Current</th><th></th><th>New</th><th>Status</th>
+            </tr></thead>
+            <tbody>
+              <template x-for="p in plans" :key="p.id">
+                <tr>
+                  <td><input class="form-check-input" type="checkbox" :disabled="!actionable(p)" :value="p.id" x-model="selected" aria-label="Select"></td>
+                  <td class="mono small" x-text="p.from"></td>
+                  <td class="path-arrow"><i class="bi bi-arrow-right"></i></td>
+                  <td class="mono small" x-text="p.to"></td>
+                  <td>
+                    <div class="small fw-semibold" :class="`status-${p.status}`" x-text="statusLabel(p)"></div>
+                    <div class="small text-muted" x-show="p.detail" x-text="p.detail"></div>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+        <template x-if="!loading && !plans.length"><div class="empty"><i class="bi bi-check2-all"></i>Every folder already matches the template.</div></template>
+      </div>
+    </template>
+
+    <!-- ============================================================ duplicates -->
+    <template x-if="$store.app.route.name === 'duplicates' && $store.app.isAdmin">
+      <div class="page" x-data="duplicatesView()">
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+          <h1 class="page-title me-auto">Duplicates</h1>
+          <button type="button" class="btn btn-ghost btn-sm" @click="load()" :disabled="loading"><i class="bi bi-arrow-clockwise"></i> Check again</button>
+        </div>
+        <p class="text-muted mb-3">Books that share an ASIN, or the same title and author, across all libraries. Each group has a recommendation based on audio quality, length, chapters and metadata; the reasons are listed on every copy.</p>
+
+        <template x-if="!loading && groups.length">
+          <div class="panel mb-3"><div class="panel-body d-flex flex-wrap align-items-center gap-2">
+            <span><strong x-text="selectedGroups().length"></strong> of <span x-text="groups.length"></span> groups have a copy selected</span>
+            <div class="ms-auto d-flex flex-wrap gap-2">
+              <button type="button" class="btn btn-ghost btn-sm" @click="selectRecommended(false)"><i class="bi bi-stars"></i> Select recommendations</button>
+              <button type="button" class="btn btn-ghost btn-sm" x-show="selectedGroups().length" @click="keep = {}">Clear</button>
+              <button type="button" class="btn btn-accent btn-sm" :disabled="!selectedGroups().length || batchBusy" @click="resolveSelected()">
+                <span class="spinner-border spinner-border-sm me-1" style="color:inherit" x-show="batchBusy"></span>Resolve selected
+              </button>
+            </div>
+          </div></div>
+        </template>
+
+        <div x-show="loading" class="py-5 text-center"><div class="spinner-border"></div><div class="text-muted mt-2">Comparing copies…</div></div>
+        <template x-if="!loading && !groups.length">
+          <div class="empty"><i class="bi bi-check2-all"></i>No duplicates found.</div>
+        </template>
+
+        <template x-for="g in groups" :key="g.key">
+          <div class="panel mb-3">
+            <div class="panel-head">
+              <div class="min-w-0">
+                <div class="fw-semibold text-truncate" x-text="g.items[0].title"></div>
+                <div class="d-flex flex-wrap gap-1 mt-1">
+                  <template x-for="r in g.reasons" :key="r"><span class="chip chip-accent" x-text="r"></span></template>
+                  <span class="chip" x-text="g.items.length + ' copies'"></span>
+                  <span class="chip chip-success" x-show="g.identicalAudio">Identical audio</span>
+                  <span class="chip" x-show="g.audibleLength" x-text="'Audible length ' + fmt.duration(g.audibleLength)"></span>
+                </div>
+              </div>
+              <div class="d-flex flex-wrap gap-2">
+                <button type="button" class="btn btn-ghost btn-sm" @click="notDuplicates(g)"><i class="bi bi-eye-slash"></i> Not duplicates</button>
+                <button type="button" class="btn btn-accent btn-sm" :disabled="!keep[g.key] || busyKey === g.key || !!lockBlock(g)" :title="lockBlock(g) || ''" @click="openResolve(g)">
+                  <span class="spinner-border spinner-border-sm me-1" style="color:inherit" x-show="busyKey === g.key"></span>Resolve…
+                </button>
+              </div>
+            </div>
+            <div class="panel-body">
+              <template x-if="lockBlock(g)">
+                <div class="dup-lock-warning mb-3"><i class="bi bi-lock-fill"></i> <span x-text="lockBlock(g)"></span></div>
+              </template>
+              <template x-if="g.recommendation">
+                <div class="dup-reco mb-3">
+                  <i class="bi" :class="g.recommendation.confident ? 'bi-stars' : 'bi-question-circle'"></i>
+                  <div class="flex-grow-1 min-w-0">
+                    <div x-text="g.recommendation.reason"></div>
+                    <div class="mt-2 dup-alt" x-show="g.recommendation.alternative">
+                      <span x-text="g.recommendation.alternative"></span>
+                      <button type="button" class="btn btn-ghost btn-sm ms-1 mt-1" :disabled="busyKey === g.key" @click="applyFix(g)"><i class="bi bi-wrench"></i> Exclude duplicate track</button>
+                    </div>
+                  </div>
+                  <button type="button" class="btn btn-sm text-nowrap" :class="keep[g.key] === g.recommendation.id ? 'btn-ghost active' : 'btn-accent'"
+                          @click="keep[g.key] = g.recommendation.id" x-text="keep[g.key] === g.recommendation.id ? 'Selected' : 'Use recommendation'"></button>
+                </div>
+              </template>
+              <div class="dup-copies">
+                <template x-for="c in g.items" :key="c.id">
+                  <label class="dup-copy" :class="keep[g.key] === c.id && 'selected'">
+                    <div class="d-flex gap-3">
+                      <div class="dup-cover">
+                        <img x-show="c.hasCover" :src="cover(c)" alt="" loading="lazy">
+                        <i class="bi bi-book" x-show="!c.hasCover"></i>
+                      </div>
+                      <div class="min-w-0 flex-grow-1">
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                          <input class="form-check-input mt-0" type="radio" :name="'keep-' + g.key" :value="c.id" x-model="keep[g.key]">
+                          <span class="fw-semibold" x-text="keep[g.key] === c.id ? 'Keep this copy' : (keep[g.key] ? 'Discard' : 'Keep this copy?')"></span>
+                          <span class="chip chip-success" x-show="g.recommendation && g.recommendation.id === c.id"><i class="bi bi-stars"></i> Recommended</span>
+                          <span class="chip chip-lock" x-show="c.locked"><i class="bi bi-lock-fill"></i> Locked</span>
+                        </div>
+                        <div class="small mt-1 text-truncate" x-text="[c.authorName, c.seriesName].filter(Boolean).join(' · ')"></div>
+                        <div class="small text-muted" x-text="c.narrators.length ? 'Narrated by ' + c.narrators.join(', ') : ''"></div>
+                      </div>
+                    </div>
+                    <div class="dup-folder mt-2"><i class="bi bi-hdd"></i> <span class="mono" x-text="c.folderPath || c.libraryName"></span></div>
+                    <div class="mono small dup-path" x-text="c.relPath"></div>
+                    <dl class="dup-stats">
+                      <dt>Audio</dt>
+                      <dd>
+                        <template x-if="c.analysis">
+                          <span class="chip" :class="{ 'chip-success': c.analysis.tier === 'high', 'chip-warning': c.analysis.tier === 'medium', 'chip-danger': c.analysis.tier === 'low' || c.analysis.tier === 'none' }"
+                                x-text="c.analysis.tier === 'none' ? 'No audio' : c.analysis.kbps + ' kbps'"></span>
+                        </template>
+                        <span x-text="c.numAudioFiles + ' file' + (c.numAudioFiles === 1 ? '' : 's') + ' · ' + c.codecs.join(', ')"></span>
+                      </dd>
+                      <dt>Length</dt><dd x-text="fmt.duration(c.duration)"></dd>
+                      <dt>Size</dt><dd x-text="fmt.size(c.size)"></dd>
+                      <dt>Chapters</dt><dd x-text="c.numChapters"></dd>
+                    </dl>
+                    <template x-if="c.analysis">
+                      <ul class="dup-notes">
+                        <template x-for="(n, idx) in c.analysis.notes" :key="idx">
+                          <li :class="'dup-note-' + n.kind">
+                            <i class="bi" :class="{ 'bi-check-circle-fill': n.kind === 'good', 'bi-x-circle-fill': n.kind === 'bad', 'bi-info-circle': n.kind === 'info' }"></i>
+                            <span x-text="n.text"></span>
+                          </li>
+                        </template>
+                      </ul>
+                    </template>
+                    <a class="small d-inline-block mt-1" :href="`#/item/${c.id}`" @click.stop>Open book</a>
+                  </label>
+                </template>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <!-- resolve dialog -->
+        <template x-if="resolving">
+          <div class="ui-modal">
+            <div class="backdrop" @click="!resolving.busy && (resolving = null)"></div>
+            <div class="modal-content">
+              <div class="modal-header">
+                <h2 class="h5 m-0">Resolve duplicates</h2>
+                <button type="button" class="btn-close" data-dismiss aria-label="Close" @click="!resolving.busy && (resolving = null)"></button>
+              </div>
+              <div class="modal-body">
+                <div class="mb-3"><span class="text-muted">Keeping</span> <span class="mono" x-text="(resolving.keep.folderPath || resolving.keep.libraryName) + '/' + resolving.keep.relPath"></span></div>
+                <template x-for="d in resolving.discards" :key="d.copy.id">
+                  <div class="panel mb-3">
+                    <div class="panel-head">
+                      <div class="min-w-0"><span class="text-muted">Discarding</span> <span class="mono" x-text="(d.copy.folderPath || d.copy.libraryName) + '/' + d.copy.relPath"></span></div>
+                      <span class="small text-muted text-nowrap" x-text="selectedCount(d) + ' file(s) to bring over'"></span>
+                    </div>
+                    <div class="panel-body p-0">
+                      <template x-if="!d.cmp.canCopy"><div class="p-3 status-conflict small" x-text="d.cmp.reason"></div></template>
+                      <div class="table-responsive" style="max-height:40vh">
+                        <table class="table table-dark-ui">
+                          <thead><tr><th style="width:40px">Bring</th><th>File</th><th>Status</th><th class="text-end">Here</th><th class="text-end">Kept copy</th></tr></thead>
+                          <tbody>
+                            <template x-for="f in d.files" :key="f.relPath">
+                              <tr>
+                                <td><input class="form-check-input" type="checkbox" x-model="f.selected" :disabled="!d.cmp.canCopy || f.status === 'same' || f.blocked" :aria-label="'Bring ' + f.relPath"></td>
+                                <td>
+                                  <span class="mono small" x-text="f.relPath"></span> <span class="chip ms-1" x-text="f.fileType"></span>
+                                  <div class="small" style="color:var(--warning)" x-show="f.warning"><i class="bi bi-exclamation-triangle"></i> <span x-text="f.warning"></span></div>
+                                </td>
+                                <td class="small" :class="{ 'status-ok': f.status === 'missing' || f.status === 'larger', 'status-unchanged': f.status === 'same' || f.status === 'smaller' }"
+                                    x-text="statusLabel(f.status) + (f.selected && f.status !== 'missing' ? ' (replace)' : '')"></td>
+                                <td class="text-end small" x-text="fmt.size(f.size)"></td>
+                                <td class="text-end small text-muted" x-text="f.keepSize === null ? '—' : fmt.size(f.keepSize)"></td>
+                              </tr>
+                            </template>
+                          </tbody>
+                        </table>
+                      </div>
+                      <div class="p-3 small text-muted" x-show="d.files.some(f => f.fileType === 'audio' && f.selected)">
+                        <i class="bi bi-exclamation-triangle" style="color:var(--warning)"></i> Audio files are being brought over. Only do this if the kept copy is missing tracks.
+                      </div>
+                    </div>
+                  </div>
+                </template>
+                <label class="form-label">Discarded copies</label>
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" id="dup-trash" value="trash" x-model="resolving.mode">
+                  <label class="form-check-label" for="dup-trash">Move to the trash folder <span class="mono small">.abstream-trash</span> in their library folder (recoverable)</label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" id="dup-delete" value="delete" x-model="resolving.mode">
+                  <label class="form-check-label" for="dup-delete">Delete permanently</label>
+                </div>
+                <p class="form-text mb-0 mt-2">Listening progress, bookmarks, collections and playlists of the discarded copies move to the kept copy.</p>
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-ghost" :disabled="resolving.busy" @click="resolving = null">Cancel</button>
+                <button type="button" :class="resolving.mode === 'delete' ? 'btn btn-danger-solid' : 'btn btn-accent'" :disabled="resolving.busy" @click="resolve()">
+                  <span class="spinner-border spinner-border-sm me-1" style="color:inherit" x-show="resolving.busy"></span>
+                  <span x-text="resolving.mode === 'delete' ? 'Keep and delete others' : 'Keep and trash others'"></span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+    </template>
+
+    <!-- ============================================================ settings -->
+    <template x-if="$store.app.route.name === 'settings'">
+      <div class="page" x-data="settingsView()">
+        <h1 class="page-title mb-3">Settings</h1>
+        <div class="nav-tabs-ui">
+          <template x-if="$store.app.isAdmin"><button :class="tab === 'libraries' && 'active'" @click="setTab('libraries')">Libraries</button></template>
+          <template x-if="$store.app.isAdmin"><button :class="tab === 'users' && 'active'" @click="setTab('users')">Users</button></template>
+          <template x-if="$store.app.isAdmin"><button :class="tab === 'keys' && 'active'" @click="setTab('keys')">API keys</button></template>
+          <template x-if="$store.app.isAdmin"><button :class="tab === 'activity' && 'active'" @click="setTab('activity')">Activity</button></template>
+          <template x-if="$store.app.isAdmin"><button :class="tab === 'trash' && 'active'" @click="setTab('trash')">Trash</button></template>
+          <button :class="tab === 'account' && 'active'" @click="setTab('account')">Account</button>
+        </div>
+
+        <!-- libraries -->
+        <template x-if="tab === 'libraries' && $store.app.isAdmin">
+          <div>
+            <div class="d-flex mb-3"><button class="btn btn-accent ms-auto" @click="newLibrary()"><i class="bi bi-plus-lg"></i> New library</button></div>
+            <template x-for="lib in $store.app.libraries" :key="lib.id">
+              <div class="panel mb-3">
+                <div class="panel-head">
+                  <div>
+                    <div class="fw-semibold"><span x-text="lib.name"></span> <span class="chip chip-lock ms-1" x-show="lib.settings.locked"><i class="bi bi-lock-fill"></i> Locked library</span></div>
+                    <div class="small text-muted" x-text="lib.lastScan ? 'Last scan ' + fmt.datetime(lib.lastScan) : 'Never scanned'"></div>
+                  </div>
+                  <div class="d-flex flex-wrap gap-2">
+                    <button class="btn btn-ghost btn-sm" @click="scan(lib, false)"><i class="bi bi-arrow-repeat"></i> Scan</button>
+                    <button class="btn btn-ghost btn-sm" @click="refreshMetadata(lib)" title="Fill empty description, genres, narrator, series, and cover. Does not replace metadata that is already set."><i class="bi bi-cloud-download"></i> Refresh metadata</button>
+                    <button class="btn btn-ghost btn-sm" @click="scan(lib, true)" title="Re-read all metadata from files (overwrites edits not saved to metadata.json)">Force rescan</button>
+                    <button class="btn btn-ghost btn-sm" @click="editLibrary(lib)"><i class="bi bi-pencil"></i> Edit</button>
+                    <div class="position-relative" x-data="{ open: false }" @click.outside="open = false">
+                      <button class="btn btn-ghost btn-sm btn-icon" @click="open = !open" aria-label="More"><i class="bi bi-three-dots"></i></button>
+                      <div class="menu" x-show="open" x-cloak @click="open = false">
+                        <button @click="removeMissing(lib)"><i class="bi bi-eraser"></i> Remove missing items</button>
+                        <button @click="deleteLibrary(lib)" style="color:var(--danger)"><i class="bi bi-trash"></i> Delete library</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="panel-body small">
+                  <div class="meta-grid">
+                    <dt>Folders</dt><dd><template x-for="f in lib.folders" :key="f.id"><div class="mono"><span x-text="f.fullPath"></span>
+                      <span class="chip chip-lock ms-1" x-show="f.locked || lib.settings.locked"><i class="bi bi-lock-fill"></i> locked</span></div></template></dd>
+                    <dt>Import folder</dt><dd class="mono" x-text="lib.settings.importFolder || '—'"></dd>
+                    <dt>Template</dt><dd class="mono" x-text="lib.settings.namingTemplate"></dd>
+                    <dt>Provider</dt><dd x-text="lib.settings.metadataProvider"></dd>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </div>
+        </template>
+
+        <!-- users -->
+        <template x-if="tab === 'users' && $store.app.isAdmin">
+          <div>
+            <div class="d-flex mb-3"><button class="btn btn-accent ms-auto" @click="newUser()"><i class="bi bi-person-plus"></i> New user</button></div>
+            <div class="panel table-responsive">
+              <table class="table table-dark-ui">
+                <thead><tr><th>User</th><th>Type</th><th class="d-none d-md-table-cell">Last seen</th><th>Status</th><th></th></tr></thead>
+                <tbody>
+                  <template x-for="u in users" :key="u.id">
+                    <tr>
+                      <td class="fw-semibold" x-text="u.username"></td>
+                      <td><span class="chip" :class="['root','admin'].includes(u.type) && 'chip-accent'" x-text="u.type"></span></td>
+                      <td class="d-none d-md-table-cell text-muted" x-text="fmt.datetime(u.lastSeen) || 'Never'"></td>
+                      <td><span class="small fw-semibold" :class="u.isActive ? 'status-ok' : 'status-error'" x-text="u.isActive ? 'Active' : 'Disabled'"></span></td>
+                      <td class="text-end text-nowrap">
+                        <button class="btn btn-ghost btn-sm" @click="editUser(u)" x-show="u.type !== 'root' || $store.app.user.type === 'root'">Edit</button>
+                        <button class="btn btn-danger-soft btn-sm" @click="deleteUser(u)" x-show="u.type !== 'root' && u.id !== $store.app.user.id">Delete</button>
+                      </td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </template>
+
+        <!-- api keys -->
+        <template x-if="tab === 'keys' && $store.app.isAdmin">
+          <div>
+            <p class="text-muted">API keys let apps and scripts sign in without a password (AudioBooth supports this). Each key acts as the user it belongs to. Send it as <span class="mono">Authorization: Bearer &lt;key&gt;</span>. The <a href="/api-docs" target="_blank" rel="noopener">API reference</a> lists every route, and <a href="/openapi.json" target="_blank" rel="noopener">openapi.json</a> is the same document for other tools.</p>
+            <template x-if="newKey">
+              <div class="panel mb-3" style="border-color:var(--accent)"><div class="panel-body">
+                <div class="fw-semibold mb-2">Copy this key now. It will not be shown again.</div>
+                <div class="d-flex gap-2"><input class="form-control mono" readonly :value="newKey" @focus="$event.target.select()"><button class="btn btn-accent" @click="copy(newKey)">Copy</button></div>
+              </div></div>
+            </template>
+            <div class="d-flex mb-3"><button class="btn btn-accent ms-auto" @click="keyForm = { name: '', userId: $store.app.user.id, days: '' }; newKey = null"><i class="bi bi-key"></i> New API key</button></div>
+            <template x-if="keyForm">
+              <form class="panel mb-3" @submit.prevent="createKey()"><div class="panel-body row g-2 align-items-end">
+                <div class="col-md-4"><label class="form-label">Name</label><input class="form-control" x-model="keyForm.name" required placeholder="e.g. iPhone"></div>
+                <div class="col-md-4"><label class="form-label">User</label><select class="form-select" x-model="keyForm.userId"><template x-for="u in users" :key="u.id"><option :value="u.id" x-text="u.username" :selected="u.id === keyForm.userId"></option></template></select></div>
+                <div class="col-md-2"><label class="form-label">Expires (days)</label><input class="form-control" type="number" min="0" x-model="keyForm.days" placeholder="Never"></div>
+                <div class="col-md-2 d-grid"><button class="btn btn-accent">Create</button></div>
+              </div></form>
+            </template>
+            <div class="panel table-responsive">
+              <table class="table table-dark-ui">
+                <thead><tr><th>Name</th><th>User</th><th class="d-none d-md-table-cell">Created</th><th class="d-none d-md-table-cell">Last used</th><th>Expires</th><th></th></tr></thead>
+                <tbody>
+                  <template x-for="k in keys" :key="k.id">
+                    <tr>
+                      <td class="fw-semibold" x-text="k.name"></td><td x-text="k.user ? k.user.username : '?'"></td>
+                      <td class="d-none d-md-table-cell text-muted" x-text="fmt.date(k.createdAt)"></td>
+                      <td class="d-none d-md-table-cell text-muted" x-text="fmt.datetime(k.lastUsedAt) || 'Never'"></td>
+                      <td class="text-muted" x-text="k.expiresAt ? fmt.date(k.expiresAt) : 'Never'"></td>
+                      <td class="text-end"><button class="btn btn-danger-soft btn-sm" @click="deleteKey(k)">Revoke</button></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+              <div class="p-3 text-muted" x-show="!keys.length">No API keys.</div>
+            </div>
+          </div>
+        </template>
+
+        <!-- activity -->
+        <template x-if="tab === 'activity' && $store.app.isAdmin">
+          <div class="row g-3">
+            <div class="col-lg-5">
+              <div class="panel mb-3"><div class="panel-head"><h2 class="section-title">Live updates</h2>
+                  <span class="small fw-semibold" :class="$store.app.eventsConnected ? 'status-ok' : 'status-error'" x-text="$store.app.eventsConnected ? 'Connected' : 'Reconnecting…'"></span></div>
+                <div class="panel-body small">
+                  <div class="form-label">Watched folders</div>
+                  <template x-for="w in watching" :key="w.path + w.mode">
+                    <div class="d-flex gap-2 py-1" style="border-bottom:1px solid var(--border)">
+                      <span class="chip" x-text="w.target"></span><span class="mono flex-grow-1 text-truncate" x-text="w.path"></span><span class="text-muted" x-text="w.mode"></span>
+                    </div>
+                  </template>
+                  <div class="text-muted" x-show="!watching.length">No folders are being watched.</div>
+                </div>
+              </div>
+              <div class="panel"><div class="panel-head"><h2 class="section-title">Tasks</h2></div><div class="panel-body">
+                <template x-for="t in $store.app.tasks" :key="t.id">
+                  <div class="task-row">
+                    <i class="bi" :class="{ 'bi-hourglass-split': t.status === 'running', 'bi-check-circle status-ok': t.status === 'done', 'bi-x-circle status-error': t.status === 'failed' }"></i>
+                    <div class="flex-grow-1 min-w-0">
+                      <div class="fw-semibold" x-text="t.title"></div>
+                      <div class="small text-muted text-truncate" x-text="t.status === 'running' ? `${t.progress}/${t.total} ${t.message}` : (t.error || fmt.datetime(t.finished_at))"></div>
+                      <div class="bar mt-1" x-show="t.status === 'running' && t.total"><span :style="`width:${t.total ? t.progress / t.total * 100 : 0}%`"></span></div>
+                    </div>
+                  </div>
+                </template>
+                <div class="text-muted" x-show="!$store.app.tasks.length">No recent tasks.</div>
+              </div></div>
+            </div>
+            <div class="col-lg-7">
+              <div class="panel"><div class="panel-head"><h2 class="section-title">Activity log</h2><button class="btn btn-ghost btn-sm" @click="loadTab()"><i class="bi bi-arrow-clockwise"></i></button></div>
+                <div class="panel-body small" style="max-height:60vh;overflow-y:auto">
+                  <template x-for="(a, idx) in activity" :key="idx">
+                    <div class="d-flex gap-3 py-1" style="border-bottom:1px solid var(--border)">
+                      <span class="mono text-muted text-nowrap" x-text="new Date(a.time).toLocaleTimeString()"></span>
+                      <span :class="{ 'status-error': a.level === 'error' }" :style="a.level === 'warning' ? 'color:var(--warning)' : ''" x-text="a.message"></span>
+                    </div>
+                  </template>
+                  <div class="text-muted" x-show="!activity.length">Nothing yet.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <!-- trash -->
+        <template x-if="tab === 'trash' && $store.app.isAdmin">
+          <div>
+            <div class="panel mb-3"><div class="panel-body">
+              <div class="row g-3 align-items-end">
+                <div class="col-md-7">
+                  <label class="form-label" for="trash-days">Empty trash after</label>
+                  <div class="d-flex gap-2 align-items-center">
+                    <input class="form-control" id="trash-days" type="number" min="0" style="max-width:120px" x-model.number="trashDays" :disabled="trash.lockedByEnv">
+                    <span>days</span>
+                    <button type="button" class="btn btn-accent btn-sm" x-show="!trash.lockedByEnv" :disabled="trashDays === trash.retentionDays" @click="saveTrashDays()">Save</button>
+                  </div>
+                  <div class="form-text" x-show="!trash.lockedByEnv">0 keeps the trash forever. Old trash is checked hourly.</div>
+                  <div class="form-text" x-show="trash.lockedByEnv"><i class="bi bi-lock"></i> Set by <span class="mono">ABSTREAM_TRASH_DAYS</span> (<span class="mono">TRASH_DAYS</span> in Docker Compose). Clear it there to manage this here.</div>
+                </div>
+                <div class="col-md-5 text-md-end">
+                  <div class="small text-muted mb-1" x-text="trashSummary()"></div>
+                  <button type="button" class="btn btn-danger-soft btn-sm" :disabled="!trash.entries.length" @click="emptyTrash()"><i class="bi bi-trash3"></i> Empty trash now</button>
+                </div>
+              </div>
+            </div></div>
+            <p class="text-muted small">Copies discarded in the duplicate manager are kept in a <span class="mono">.abstream-trash</span> folder inside their library folder until the trash is emptied.</p>
+            <div class="py-4 text-center" x-show="trashLoading"><div class="spinner-border" role="status"><span class="visually-hidden">Loading</span></div></div>
+            <template x-if="!trashLoading && !trashError && !trash.entries.length">
+              <div class="empty"><i class="bi bi-trash"></i>The trash is empty.</div>
+            </template>
+            <template x-for="e in trash.entries" :key="e.folderId + e.batch">
+              <div class="panel mb-3" x-show="!trashLoading">
+                <div class="panel-head">
+                  <div class="min-w-0">
+                    <div class="fw-semibold" x-text="'Discarded ' + fmt.datetime(e.deletedAt)"></div>
+                    <div class="small text-muted">
+                      <span class="mono" x-text="e.folderPath"></span> ·
+                      <span x-text="fmt.size(e.size)"></span> ·
+                      <span x-text="e.locked ? 'kept: the folder is locked' : (e.expiresAt ? 'deleted for good ' + untilText(e.expiresAt) : 'kept until you empty the trash')"></span>
+                    </div>
+                  </div>
+                  <button type="button" class="btn btn-danger-soft btn-sm" x-show="!e.locked" @click="deleteTrash(e)"><i class="bi bi-x-lg"></i> Delete now</button>
+                  <span class="chip chip-lock" x-show="e.locked" :title="e.lockReason"><i class="bi bi-lock-fill"></i> Locked folder</span>
+                </div>
+                <div class="panel-body p-0">
+                  <table class="table table-dark-ui">
+                    <tbody>
+                      <template x-for="b in e.books" :key="b.relPath">
+                        <tr>
+                          <td class="mono small" x-text="b.relPath"></td>
+                          <td class="text-end small text-muted text-nowrap" x-text="fmt.size(b.size)"></td>
+                          <td class="text-end text-nowrap" style="width:1%">
+                            <button type="button" class="btn btn-ghost btn-sm" @click="restoreTrash(e, b)"><i class="bi bi-arrow-counterclockwise"></i> Restore</button>
+                            <button type="button" class="btn btn-ghost btn-sm btn-icon" x-show="!e.locked" @click="deleteTrash(e, b)" :aria-label="'Delete ' + b.relPath"><i class="bi bi-trash3"></i></button>
+                          </td>
+                        </tr>
+                      </template>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </template>
+          </div>
+        </template>
+
+        <!-- account -->
+        <template x-if="tab === 'account'">
+          <div class="row g-3">
+            <div class="col-lg-6">
+              <form class="panel" @submit.prevent="changePassword()"><div class="panel-head"><h2 class="section-title">Change password</h2></div><div class="panel-body">
+                <div class="mb-2"><label class="form-label">Current password</label><input class="form-control" type="password" x-model="pw.password" autocomplete="current-password"></div>
+                <div class="mb-3"><label class="form-label">New password</label><input class="form-control" type="password" x-model="pw.newPassword" autocomplete="new-password"></div>
+                <button class="btn btn-accent">Update password</button>
+              </div></form>
+            </div>
+            <div class="col-lg-6">
+              <div class="panel"><div class="panel-head"><h2 class="section-title">Connecting apps</h2></div><div class="panel-body">
+                <p class="mb-2">Apps built for Audiobookshelf (such as AudioBooth) can connect to this server. Use this address as the server URL:</p>
+                <div class="d-flex gap-2"><input class="form-control mono" readonly :value="location.origin"><button class="btn btn-ghost" @click="copy(location.origin)">Copy</button></div>
+                <p class="mt-3 mb-0 text-muted small">Sign in with your username and password, or with an API key from an administrator.</p>
+              </div></div>
+            </div>
+          </div>
+        </template>
+
+        <!-- library editor -->
+        <template x-if="editingLib">
+          <div class="ui-modal">
+            <div class="backdrop" @click="editingLib = null"></div>
+            <form class="modal-content" @submit.prevent="saveLibrary()">
+              <div class="modal-header"><h2 class="h5 m-0" x-text="editingLib.id ? 'Edit library' : 'New library'"></h2><button type="button" class="btn-close" data-dismiss @click="editingLib = null" aria-label="Close"></button></div>
+              <div class="modal-body">
+                <div class="mb-3"><label class="form-label">Name</label><input class="form-control" x-model="editingLib.name" required placeholder="Audiobooks"></div>
+                <div class="form-check form-switch mb-3">
+                  <input class="form-check-input" type="checkbox" id="tg-locked" x-model="editingLib.settings.locked">
+                  <label class="form-check-label" for="tg-locked"><i class="bi bi-lock-fill" style="color:var(--warning)"></i> Lock the whole library (source of truth)
+                    <span class="d-block small text-muted">Nothing in any of its folders is ever deleted or overwritten: no "delete files", no discarding duplicates, no emptying trash, no replacing files. Renaming, organizing and metadata edits still work.</span></label>
+                </div>
+                <label class="form-label">Library folders</label>
+                <template x-for="(f, idx) in editingLib.folders" :key="f.fullPath">
+                  <div class="d-flex gap-2 mb-2">
+                    <input class="form-control mono" :value="f.fullPath" readonly>
+                    <button type="button" class="btn btn-icon" :class="f.locked || editingLib.settings.locked ? 'btn-lock-on' : 'btn-ghost'" :disabled="editingLib.settings.locked"
+                            @click="f.locked = !f.locked" :aria-pressed="!!f.locked" :aria-label="f.locked ? 'Unlock folder' : 'Lock folder'"
+                            :title="editingLib.settings.locked ? 'The whole library is locked' : (f.locked ? 'Locked: files here are never deleted. Click to unlock.' : 'Lock this folder (source of truth)')">
+                      <i class="bi" :class="f.locked || editingLib.settings.locked ? 'bi-lock-fill' : 'bi-unlock'"></i>
+                    </button>
+                    <button type="button" class="btn btn-ghost btn-icon" @click="editingLib.folders.splice(idx, 1)" aria-label="Remove folder"><i class="bi bi-x-lg"></i></button>
+                  </div>
+                </template>
+                <div class="form-text mb-2" x-show="editingLib.folders.length"><i class="bi bi-lock"></i> Lock a folder to make it a source of truth: Audivault never deletes or overwrites files in it. Renaming and organizing still work.</div>
+                <div class="d-flex gap-2 mb-3">
+                  <input class="form-control mono" x-model="newFolder" placeholder="Path to a folder of audiobooks" @keydown.enter.prevent="addFolder()">
+                  <button type="button" class="btn btn-ghost" @click="addFolder()">Add</button>
+                  <button type="button" class="btn btn-ghost" @click="openPicker('folder')"><i class="bi bi-folder2-open"></i> Browse</button>
+                </div>
+                <div class="mb-3">
+                  <label class="form-label">Import folder</label>
+                  <div class="d-flex gap-2">
+                    <input class="form-control mono" x-model="editingLib.settings.importFolder" placeholder="Optional: inbox folder for new books">
+                    <button type="button" class="btn btn-ghost" @click="openPicker('import')"><i class="bi bi-folder2-open"></i> Browse</button>
+                  </div>
+                  <div class="form-text">Books dropped here show up on the Import page and go into the library using the template below.</div>
+                  <div class="row g-2 align-items-center mt-1">
+                    <div class="col-sm-5"><label class="form-label mb-0" for="import-mode">When importing</label></div>
+                    <div class="col-sm-7">
+                      <select class="form-select" id="import-mode" x-model="editingLib.settings.importMode">
+                        <option value="move">Move files into the library</option>
+                        <option value="copy">Copy files (leave the originals)</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div class="form-check form-switch mt-2">
+                    <input class="form-check-input" type="checkbox" id="tg-autoimport" x-model="editingLib.settings.autoImport" :disabled="!editingLib.settings.importFolder">
+                    <label class="form-check-label" for="tg-autoimport">Import automatically
+                      <span class="d-block small text-muted">New books are imported once their files stop changing, when the provider agrees: same ASIN, matching title and author, or a near-exact title whose length matches (the provider then supplies the author). A book whose library folder already exists is skipped. Others stay on the Import page with the closest match filled in.</span></label>
+                  </div>
+                </div>
+                <div class="mb-3">
+                  <label class="form-label">Folder naming template</label>
+                  <input class="form-control mono" x-model="editingLib.settings.namingTemplate" @input="updatePreview()">
+                  <div class="form-text">Examples: <template x-for="p in preview" :key="p"><div class="mono" style="color:var(--text)" x-text="p"></div></template></div>
+                </div>
+                <div class="row g-3 mb-3">
+                  <div class="col-md-6"><label class="form-label">Metadata provider</label>
+                    <select class="form-select" x-model="editingLib.settings.metadataProvider"><template x-for="p in providers" :key="p.value"><option :value="p.value" x-text="p.text" :selected="p.value === editingLib.settings.metadataProvider"></option></template></select></div>
+                  <div class="col-md-3"><label class="form-label">Auto scan (min)</label><input class="form-control" type="number" min="0" x-model="editingLib.settings.scanIntervalMinutes"></div>
+                  <div class="col-md-3"><label class="form-label">Finished when (s) left</label><input class="form-control" type="number" min="0" x-model.number="editingLib.settings.markAsFinishedTimeRemaining"></div>
+                  <div class="col-12"><label class="form-label">Metadata refresh (hours)</label><input class="form-control" type="number" min="0" style="max-width:160px" x-model="editingLib.settings.metadataRefreshHours"><div class="form-text">0 is off. Fills empty description, genres, narrator, series, and cover in small batches. Does not replace metadata that is already set, and does not run just because the server started.</div></div>
+                </div>
+                <template x-for="t in toggles" :key="t[0]">
+                  <div class="form-check form-switch mb-2">
+                    <input class="form-check-input" type="checkbox" :id="'tg-' + t[0]" x-model="editingLib.settings[t[0]]">
+                    <label class="form-check-label" :for="'tg-' + t[0]"><span x-text="t[1]"></span> <span class="d-block small text-muted" x-text="t[2]"></span></label>
+                  </div>
+                </template>
+                <div class="panel mt-3"><div class="panel-body">
+                  <div class="form-check form-switch mb-2">
+                    <input class="form-check-input" type="checkbox" id="tg-watch" :checked="!editingLib.settings.disableWatcher" @change="editingLib.settings.disableWatcher = !$event.target.checked">
+                    <label class="form-check-label" for="tg-watch">Watch library folders for changes
+                      <span class="d-block small text-muted">Added, changed or removed books are picked up automatically. Only the affected author folder is rescanned, after files stop changing.</span></label>
+                  </div>
+                  <div class="row g-2 align-items-center" x-show="!editingLib.settings.disableWatcher">
+                    <div class="col-md-5"><label class="form-label mb-0" for="watch-mode">Detection method</label></div>
+                    <div class="col-md-7">
+                      <select class="form-select" id="watch-mode" x-model="editingLib.settings.watchMode">
+                        <option value="auto">Automatic</option>
+                        <option value="native">File system events</option>
+                        <option value="polling">Polling (network shares, Docker Desktop)</option>
+                      </select>
+                    </div>
+                    <div class="col-12 form-text">File system events are instant but don't reach network shares or Docker Desktop on Windows/macOS. Polling checks every 30 seconds and works everywhere.</div>
+                  </div>
+                </div></div>
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-ghost" @click="editingLib = null" :disabled="savingLib">Cancel</button>
+                <button class="btn btn-accent" :disabled="savingLib" x-text="savingLib ? 'Saving…' : (editingLib.id ? 'Save' : 'Create and scan')"></button>
+              </div>
+            </form>
+          </div>
+        </template>
+
+        <!-- folder picker -->
+        <template x-if="picker">
+          <div class="ui-modal sm" style="z-index:1070">
+            <div class="backdrop" @click="picker = null"></div>
+            <div class="modal-content">
+              <div class="modal-header"><h2 class="h6 m-0">Choose a folder</h2><button type="button" class="btn-close" data-dismiss @click="picker = null" aria-label="Close"></button></div>
+              <div class="modal-body">
+                <div class="mono small mb-2" x-text="picker.path || 'This computer'"></div>
+                <div class="fs-list">
+                  <template x-if="picker.parent !== null && picker.path"><button @click="browse(picker.parent)"><i class="bi bi-arrow-90deg-up"></i> ..</button></template>
+                  <template x-for="d in picker.dirs" :key="d.path"><button @click="browse(d.path)"><i class="bi bi-folder" style="color:var(--accent)"></i> <span x-text="d.name"></span></button></template>
+                  <div class="p-3 text-muted small" x-show="!picker.dirs.length">No subfolders</div>
+                </div>
+              </div>
+              <div class="modal-footer"><button type="button" class="btn btn-ghost" @click="picker = null">Cancel</button><button class="btn btn-accent" :disabled="!picker.path" @click="choose()">Use this folder</button></div>
+            </div>
+          </div>
+        </template>
+
+        <!-- user editor -->
+        <template x-if="userForm">
+          <div class="ui-modal sm">
+            <div class="backdrop" @click="userForm = null"></div>
+            <form class="modal-content" @submit.prevent="saveUser()">
+              <div class="modal-header"><h2 class="h5 m-0" x-text="userForm.id ? 'Edit user' : 'New user'"></h2><button type="button" class="btn-close" data-dismiss @click="userForm = null" aria-label="Close"></button></div>
+              <div class="modal-body">
+                <div class="mb-2"><label class="form-label">Username</label><input class="form-control" x-model="userForm.username" required></div>
+                <div class="mb-2"><label class="form-label" x-text="userForm.id ? 'New password (optional)' : 'Password'"></label><input class="form-control" type="password" x-model="userForm.password" autocomplete="new-password"></div>
+                <div class="mb-3" x-show="userForm.type !== 'root'"><label class="form-label">Type</label>
+                  <select class="form-select" x-model="userForm.type"><option value="user">User</option><option value="admin" :disabled="$store.app.user.type !== 'root'">Admin</option><option value="guest">Guest</option></select></div>
+                <label class="form-label">Permissions</label>
+                <template x-for="p in [['download','Download'],['update','Edit metadata'],['delete','Delete'],['accessExplicitContent','Explicit content'],['accessAllLibraries','All libraries']]" :key="p[0]">
+                  <div class="form-check"><input class="form-check-input" type="checkbox" :id="'perm-' + p[0]" x-model="userForm.permissions[p[0]]"><label class="form-check-label" :for="'perm-' + p[0]" x-text="p[1]"></label></div>
+                </template>
+                <template x-if="!userForm.permissions.accessAllLibraries">
+                  <div class="mt-2"><label class="form-label">Allowed libraries</label>
+                    <template x-for="l in $store.app.libraries" :key="l.id"><div class="form-check"><input class="form-check-input" type="checkbox" :value="l.id" x-model="userForm.librariesAccessible" :id="'ul-' + l.id"><label class="form-check-label" :for="'ul-' + l.id" x-text="l.name"></label></div></template>
+                  </div>
+                </template>
+                <div class="form-check form-switch mt-3" x-show="userForm.id && userForm.type !== 'root'"><input class="form-check-input" type="checkbox" id="u-active" x-model="userForm.isActive"><label class="form-check-label" for="u-active">Account enabled</label></div>
+              </div>
+              <div class="modal-footer"><button type="button" class="btn btn-ghost" @click="userForm = null">Cancel</button><button class="btn btn-accent">Save</button></div>
+            </form>
+          </div>
+        </template>
+      </div>
+    </template>
+
+  </main>
+  </template>
+
+  <!-- ================================================================ series match -->
+  <template x-if="$store.app.modal && $store.app.modal.type === 'series-match'">
+    <div class="ui-modal" x-data="seriesMatchModal()">
+      <div class="backdrop" @click="close()"></div>
+      <div class="modal-content">
+        <div class="modal-header">
+          <div class="min-w-0">
+            <div class="text-muted small text-truncate" x-text="seriesName"></div>
+            <h2 class="h5 m-0" x-text="books.length ? `Book ${index + 1} of ${books.length}` : 'Match series'"></h2>
+          </div>
+          <button type="button" class="btn-close" data-dismiss @click="close()" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div x-show="loading" class="py-5 text-center"><div class="spinner-border"></div></div>
+          <template x-if="!loading && !books.length">
+            <div class="empty"><i class="bi bi-collection"></i>No books to match.</div>
+          </template>
+          <template x-if="!loading && book">
+            <div>
+              <div class="mb-3">
+                <div class="fw-semibold" x-text="book.title"></div>
+                <div class="small text-muted text-break" x-text="[sourceLabel(book), book.author, numberLabel(book), book.relPath].filter(Boolean).join(' · ')"></div>
+              </div>
+              <form class="row g-2 mb-3" @submit.prevent="search(true)">
+                <div class="col-md-3"><select class="form-select" x-model="provider" @change="search(true)"><template x-for="p in providers" :key="p.value"><option :value="p.value" x-text="p.text"></option></template></select></div>
+                <div class="col-md-4"><input class="form-control" x-model="qTitle" placeholder="Title or ASIN"></div>
+                <div class="col-md-3"><input class="form-control" x-model="qAuthor" placeholder="Author"></div>
+                <div class="col-md-2 d-grid"><button class="btn btn-accent" :disabled="searching"><span class="spinner-border spinner-border-sm" style="color:inherit" x-show="searching"></span><span x-show="!searching">Search</span></button></div>
+              </form>
+              <div x-show="searching && !results.length" class="py-4 text-center"><div class="spinner-border"></div></div>
+              <div x-show="!searching && !results.length" class="text-muted">No results.</div>
+              <div class="d-grid gap-2" style="max-height:45vh;overflow-y:auto">
+                <template x-for="(r, idx) in results" :key="(r.asin || idx) + '-' + idx">
+                  <div class="match-result" :class="isSelected(r) && 'selected'" @click="select(r)">
+                    <img :src="r.cover || ''" alt="" x-show="r.cover">
+                    <div class="min-w-0">
+                      <div class="fw-semibold" x-text="r.title + (r.subtitle ? ': ' + r.subtitle : '')"></div>
+                      <div class="small text-muted" x-text="[r.author, r.narrator && 'Narr. ' + r.narrator, r.publishedYear, r.duration ? fmt.duration(r.duration * 60) : ''].filter(Boolean).join(' · ')"></div>
+                      <div x-show="seriesChip(r)"><span class="chip chip-accent mt-1" x-text="seriesChip(r)"></span></div>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </template>
+        </div>
+        <div class="modal-footer" x-show="!loading && books.length">
+          <button type="button" class="btn btn-ghost me-auto" @click="skip()" :disabled="saving">Skip</button>
+          <button type="button" class="btn btn-ghost" @click="back()" :disabled="index === 0 || saving">Back</button>
+          <button type="button" class="btn btn-accent" @click="next()" :disabled="saving">
+            <span class="spinner-border spinner-border-sm me-1" style="color:inherit" x-show="saving"></span>
+            <span x-text="atEnd ? 'Save and organize' : 'Next'"></span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <!-- ================================================================ edit modal -->
+  <template x-if="$store.app.modal && $store.app.modal.type === 'edit'">
+    <div class="ui-modal" x-data="editModal()">
+      <div class="backdrop" @click="close()"></div>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 class="h5 m-0 text-truncate" x-text="item.media.metadata.title"></h2>
+          <button type="button" class="btn-close" data-dismiss @click="close()" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="nav-tabs-ui">
+            <button :class="tab === 'details' && 'active'" @click="tab = 'details'">Details</button>
+            <button :class="tab === 'match' && 'active'" @click="tab = 'match'">Match</button>
+            <button :class="tab === 'cover' && 'active'" @click="tab = 'cover'">Cover</button>
+            <button :class="tab === 'chapters' && 'active'" @click="tab = 'chapters'">Chapters</button>
+            <button :class="tab === 'files' && 'active'" @click="tab = 'files'">Tracks</button>
+          </div>
+
+          <template x-if="tab === 'details'">
+            <form @submit.prevent="saveDetails()">
+              <div class="row g-2">
+                <div class="col-md-8"><label class="form-label">Title</label><input class="form-control" x-model="form.title" required></div>
+                <div class="col-md-4"><label class="form-label">Subtitle</label><input class="form-control" x-model="form.subtitle"></div>
+                <div class="col-md-6"><label class="form-label">Authors</label><input class="form-control" x-model="form.authors" placeholder="Name & Name"></div>
+                <div class="col-md-6"><label class="form-label">Narrators</label><input class="form-control" x-model="form.narrators" placeholder="Name, Name"></div>
+                <div class="col-12">
+                  <label class="form-label">Series</label>
+                  <template x-for="(s, idx) in form.series" :key="idx">
+                    <div class="d-flex gap-2 mb-2">
+                      <input class="form-control" x-model="s.name" placeholder="Series name">
+                      <input class="form-control" style="max-width:110px" x-model="s.sequence" placeholder="#">
+                      <button type="button" class="btn btn-ghost btn-icon" @click="form.series.splice(idx, 1)" aria-label="Remove series"><i class="bi bi-x-lg"></i></button>
+                    </div>
+                  </template>
+                  <button type="button" class="btn btn-ghost btn-sm" @click="form.series.push({ name: '', sequence: '' })"><i class="bi bi-plus"></i> Add series</button>
+                </div>
+                <div class="col-md-6"><label class="form-label">Genres</label><input class="form-control" x-model="form.genres" placeholder="Comma separated"></div>
+                <div class="col-md-6"><label class="form-label">Tags</label><input class="form-control" x-model="form.tags" placeholder="Comma separated"></div>
+                <div class="col-md-3 col-6"><label class="form-label">Year</label><input class="form-control" x-model="form.publishedYear"></div>
+                <div class="col-md-5 col-6"><label class="form-label">Publisher</label><input class="form-control" x-model="form.publisher"></div>
+                <div class="col-md-4"><label class="form-label">Language</label><input class="form-control" x-model="form.language"></div>
+                <div class="col-md-6"><label class="form-label">ASIN</label><input class="form-control mono" x-model="form.asin"></div>
+                <div class="col-md-6"><label class="form-label">ISBN</label><input class="form-control mono" x-model="form.isbn"></div>
+                <div class="col-12"><label class="form-label">Description</label><textarea class="form-control" rows="6" x-model="form.description"></textarea></div>
+                <div class="col-12 d-flex gap-4">
+                  <div class="form-check"><input class="form-check-input" type="checkbox" id="f-exp" x-model="form.explicit"><label class="form-check-label" for="f-exp">Explicit</label></div>
+                  <div class="form-check"><input class="form-check-input" type="checkbox" id="f-abr" x-model="form.abridged"><label class="form-check-label" for="f-abr">Abridged</label></div>
+                </div>
+              </div>
+              <div class="d-flex justify-content-end gap-2 mt-3"><button type="button" class="btn btn-ghost" @click="close()">Close</button><button class="btn btn-accent" :disabled="saving">Save details</button></div>
+            </form>
+          </template>
+
+          <template x-if="tab === 'match'">
+            <div>
+              <form class="row g-2 mb-3" @submit.prevent="search()">
+                <div class="col-md-3"><select class="form-select" x-model="provider"><template x-for="p in providers" :key="p.value"><option :value="p.value" x-text="p.text" :selected="p.value === provider"></option></template></select></div>
+                <div class="col-md-4"><input class="form-control" x-model="qTitle" placeholder="Title or ASIN"></div>
+                <div class="col-md-3"><input class="form-control" x-model="qAuthor" placeholder="Author"></div>
+                <div class="col-md-2 d-grid"><button class="btn btn-accent" :disabled="searching"><span class="spinner-border spinner-border-sm" style="color:inherit" x-show="searching"></span><span x-show="!searching">Search</span></button></div>
+              </form>
+              <template x-if="!picked">
+                <div class="d-grid gap-2">
+                  <template x-for="(r, idx) in results" :key="idx">
+                    <div class="match-result" @click="picked = r">
+                      <img :src="r.cover || ''" alt="" x-show="r.cover">
+                      <div class="min-w-0">
+                        <div class="fw-semibold" x-text="r.title + (r.subtitle ? ': ' + r.subtitle : '')"></div>
+                        <div class="small text-muted" x-text="[r.author, r.narrator && 'Narr. ' + r.narrator, r.publishedYear, r.duration ? fmt.duration(r.duration * 60) : ''].filter(Boolean).join(' · ')"></div>
+                        <div x-show="r.series && r.series.length"><span class="chip chip-accent mt-1" x-text="(r.series || []).map(s => s.series + (s.sequence ? ' #' + s.sequence : '')).join(', ')"></span></div>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+              </template>
+              <template x-if="picked">
+                <div class="panel"><div class="panel-body">
+                  <div class="d-flex gap-3 mb-3">
+                    <img :src="picked.cover" x-show="picked.cover" style="width:110px;height:110px;object-fit:cover;border-radius:8px;border:1px solid var(--border)" alt="">
+                    <dl class="meta-grid flex-grow-1 mb-0">
+                      <dt>Title</dt><dd x-text="picked.title"></dd>
+                      <dt>Author</dt><dd x-text="picked.author || '—'"></dd>
+                      <dt>Narrator</dt><dd x-text="picked.narrator || '—'"></dd>
+                      <dt>Series</dt><dd x-text="(picked.series || []).map(s => s.series + (s.sequence ? ' #' + s.sequence : '')).join(', ') || '—'"></dd>
+                      <dt>Year</dt><dd x-text="picked.publishedYear || '—'"></dd>
+                      <dt>ASIN / ISBN</dt><dd class="mono" x-text="[picked.asin, picked.isbn].filter(Boolean).join(' / ') || '—'"></dd>
+                    </dl>
+                  </div>
+                  <div class="form-check mb-3"><input class="form-check-input" type="checkbox" id="m-ovr" x-model="override"><label class="form-check-label" for="m-ovr">Replace existing values (otherwise only empty fields are filled)</label></div>
+                  <div class="d-flex gap-2 justify-content-end"><button class="btn btn-ghost" @click="picked = null">Back to results</button><button class="btn btn-accent" :disabled="saving" @click="applyMatch()">Apply match</button></div>
+                </div></div>
+              </template>
+            </div>
+          </template>
+
+          <template x-if="tab === 'cover'">
+            <div>
+              <div class="d-flex flex-wrap gap-3 mb-3 align-items-start">
+                <div style="width:140px" class="cover"><img x-show="item.media.coverPath" :src="$store.app.cover(item)" alt="Current cover"><div class="cover-ph" x-show="!item.media.coverPath">No cover</div></div>
+                <div class="flex-grow-1">
+                  <label class="form-label">From URL</label>
+                  <div class="d-flex gap-2 mb-2"><input class="form-control" x-model="coverUrl" placeholder="https://…"><button class="btn btn-accent" :disabled="!coverUrl" @click="setCover(coverUrl)">Use</button></div>
+                  <label class="form-label">Upload</label>
+                  <input class="form-control mb-2" type="file" accept="image/*" @change="uploadCover($event)">
+                  <button class="btn btn-danger-soft btn-sm" x-show="item.media.coverPath" @click="removeCover()">Remove cover</button>
+                </div>
+              </div>
+              <form class="row g-2 mb-3" @submit.prevent="searchCovers()">
+                <div class="col-md-3"><select class="form-select" x-model="coverProvider"><template x-for="p in coverProviders" :key="p.value"><option :value="p.value" x-text="p.text" :selected="p.value === coverProvider"></option></template></select></div>
+                <div class="col-md-4"><input class="form-control" x-model="qTitle" placeholder="Title"></div>
+                <div class="col-md-3"><input class="form-control" x-model="qAuthor" placeholder="Author"></div>
+                <div class="col-md-2 d-grid"><button class="btn btn-ghost" :disabled="coverSearching">Find covers</button></div>
+              </form>
+              <div x-show="coverSearching" class="py-3 text-center"><div class="spinner-border"></div></div>
+              <div class="book-grid" style="grid-template-columns:repeat(auto-fill,minmax(110px,1fr))">
+                <template x-for="url in covers" :key="url"><div class="cover-choice" @click="setCover(url)"><img :src="url" loading="lazy" alt="Cover option"></div></template>
+              </div>
+            </div>
+          </template>
+
+          <template x-if="tab === 'chapters'">
+            <div>
+              <div class="d-flex flex-wrap gap-2 mb-3">
+                <input class="form-control mono" style="max-width:200px" x-model="chapterAsin" placeholder="ASIN">
+                <button class="btn btn-ghost" :disabled="!chapterAsin" @click="lookupChapters()"><i class="bi bi-cloud-download"></i> Look up chapters</button>
+                <button class="btn btn-ghost ms-auto" @click="addChapter()"><i class="bi bi-plus"></i> Add</button>
+              </div>
+              <div class="panel" style="max-height:50vh;overflow-y:auto">
+                <table class="table table-dark-ui">
+                  <thead><tr><th style="width:130px">Start</th><th>Title</th><th style="width:50px"></th></tr></thead>
+                  <tbody>
+                    <template x-for="(c, idx) in chapters" :key="idx">
+                      <tr>
+                        <td><input class="form-control form-control-sm mono" x-model="c.startStr"></td>
+                        <td><input class="form-control form-control-sm" x-model="c.title"></td>
+                        <td><button class="btn btn-ghost btn-sm btn-icon" @click="chapters.splice(idx, 1)" aria-label="Remove chapter"><i class="bi bi-x-lg"></i></button></td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+              <div class="d-flex justify-content-between align-items-center mt-3">
+                <span class="small text-muted" x-text="'Book length ' + fmt.clock(item.media.duration)"></span>
+                <button class="btn btn-accent" @click="saveChapters()">Save chapters</button>
+              </div>
+            </div>
+          </template>
+
+          <template x-if="tab === 'files'">
+            <div>
+              <p class="text-muted small">Untick files that should not be played (samples, intros). Chapters are rebuilt from the remaining files.</p>
+              <div class="panel mb-3">
+                <table class="table table-dark-ui">
+                  <thead><tr><th style="width:40px">Play</th><th>#</th><th>File</th><th class="text-end">Duration</th></tr></thead>
+                  <tbody>
+                    <template x-for="f in files" :key="f.ino">
+                      <tr>
+                        <td><input class="form-check-input" type="checkbox" :checked="!f.exclude" @change="f.exclude = !$event.target.checked" aria-label="Include file"></td>
+                        <td class="text-muted" x-text="f.index"></td><td class="mono small" x-text="f.metadata.relPath"></td>
+                        <td class="text-end mono" x-text="fmt.clock(f.duration)"></td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+              <div class="d-flex justify-content-end"><button class="btn btn-accent" @click="saveFiles()">Save track list</button></div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <!-- organize single item -->
+  <template x-if="$store.app.modal && $store.app.modal.type === 'organize-item'">
+    <div class="ui-modal sm" x-data="organizeItemModal()">
+      <div class="backdrop" @click="$store.app.modal = null"></div>
+      <div class="modal-content">
+        <div class="modal-header"><h2 class="h5 m-0">Rename folder</h2><button type="button" class="btn-close" data-dismiss @click="$store.app.modal = null" aria-label="Close"></button></div>
+        <div class="modal-body">
+          <div x-show="!plan" class="text-center py-3"><div class="spinner-border"></div></div>
+          <template x-if="plan">
+            <div>
+              <label class="form-label">Current</label><div class="mono mb-3" x-text="plan.from"></div>
+              <label class="form-label">New</label><div class="mono mb-3" style="color:var(--accent)" x-text="plan.to"></div>
+              <div x-show="plan.status === 'unchanged'" class="status-unchanged">Already matches the template.</div>
+              <div x-show="plan.detail" class="small mt-2" :class="`status-${plan.status}`" x-text="plan.detail"></div>
+            </div>
+          </template>
+        </div>
+        <div class="modal-footer"><button type="button" class="btn btn-ghost" @click="$store.app.modal = null">Cancel</button><button class="btn btn-accent" :disabled="!plan || (plan.status !== 'ok' && plan.status !== 'stale') || busy" @click="apply()" x-text="plan && plan.status === 'stale' ? 'Remove leftover' : 'Rename'"></button></div>
+      </div>
+    </div>
+  </template>
+
+  <!-- add to collection -->
+  <template x-if="$store.app.modal && $store.app.modal.type === 'collection'">
+    <div class="ui-modal sm" x-data="{ list: [], name: '', async init() { this.list = (await api('GET', `/api/libraries/${$store.app.modal.item.libraryId}/collections`)).results; },
+         async add(c) { await api('POST', `/api/collections/${c.id}/book`, { id: $store.app.modal.item.id }); $store.app.toast('Added to ' + c.name, 'success'); $store.app.modal = null; },
+         async create() { const it = $store.app.modal.item; await api('POST', '/api/collections', { libraryId: it.libraryId, name: this.name, books: [it.id] }); $store.app.toast('Collection created', 'success'); $store.app.modal = null; } }">
+      <div class="backdrop" @click="$store.app.modal = null"></div>
+      <div class="modal-content">
+        <div class="modal-header"><h2 class="h5 m-0">Add to collection</h2><button type="button" class="btn-close" data-dismiss @click="$store.app.modal = null" aria-label="Close"></button></div>
+        <div class="modal-body">
+          <div class="d-grid gap-2 mb-3">
+            <template x-for="c in list" :key="c.id">
+              <button class="btn btn-ghost text-start d-flex justify-content-between" @click="add(c)" :disabled="c.books.some(b => b.id === $store.app.modal.item.id)">
+                <span x-text="c.name"></span><span class="text-muted small" x-text="c.books.some(b => b.id === $store.app.modal.item.id) ? 'Already added' : c.books.length + ' books'"></span>
+              </button>
+            </template>
+          </div>
+          <form class="d-flex gap-2" @submit.prevent="create()" x-show="$store.app.canUpdate"><input class="form-control" x-model="name" placeholder="New collection name" required><button class="btn btn-accent">Create</button></form>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <!-- ================================================================ player -->
+  <template x-if="$store.player.active">
+    <div class="player" x-data>
+      <div class="inner">
+        <div class="now">
+          <a :href="`#/item/${$store.player.item.id}`">
+            <img x-show="$store.player.item.media.coverPath" :src="$store.app.cover($store.player.item)" alt="">
+            <div class="ph" x-show="!$store.player.item.media.coverPath"></div>
+          </a>
+          <div class="min-w-0">
+            <div class="t" x-text="$store.player.item.media.metadata.title"></div>
+            <div class="s" x-text="$store.player.chapter ? $store.player.chapter.title : $store.player.item.media.metadata.authorName"></div>
+          </div>
+        </div>
+        <div class="controls">
+          <button class="ctrl d-none d-sm-grid" @click="$store.player.prevChapter()" title="Previous chapter" aria-label="Previous chapter"><i class="bi bi-skip-start-fill"></i></button>
+          <button class="ctrl" @click="$store.player.jump(-10)" title="Back 10s" aria-label="Back 10 seconds"><i class="bi bi-arrow-counterclockwise"></i></button>
+          <button class="play-btn" @click="$store.player.toggle()" :aria-label="$store.player.playing ? 'Pause' : 'Play'"><i class="bi" :class="$store.player.playing ? 'bi-pause-fill' : 'bi-play-fill'"></i></button>
+          <button class="ctrl" @click="$store.player.jump(30)" title="Forward 30s" aria-label="Forward 30 seconds"><i class="bi bi-arrow-clockwise"></i></button>
+          <button class="ctrl d-none d-sm-grid" @click="$store.player.nextChapter()" title="Next chapter" aria-label="Next chapter"><i class="bi bi-skip-end-fill"></i></button>
+        </div>
+        <div class="extras">
+          <div class="position-relative" x-data="{ open: false }" @click.outside="open = false">
+            <button class="btn btn-ghost btn-sm" @click="open = !open" title="Sleep timer"><i class="bi bi-moon"></i> <span x-text="$store.player.sleepLabel"></span></button>
+            <div class="menu" x-show="open" x-cloak @click="open = false" style="bottom:calc(100% + 6px);top:auto">
+              <div class="menu-label">Sleep timer</div>
+              <template x-for="m in [5, 15, 30, 45, 60]" :key="m"><button @click="$store.player.setSleep(m)" x-text="m + ' minutes'"></button></template>
+              <button @click="$store.player.setSleep('chapter')">End of chapter</button>
+              <button @click="$store.player.setSleep(null)">Off</button>
+            </div>
+          </div>
+          <div class="position-relative" x-data="{ open: false }" @click.outside="open = false">
+            <button class="btn btn-ghost btn-sm mono" @click="open = !open" title="Playback speed" x-text="$store.player.rate + '×'"></button>
+            <div class="menu" x-show="open" x-cloak @click="open = false" style="bottom:calc(100% + 6px);top:auto;min-width:120px">
+              <template x-for="r in [0.75, 0.9, 1, 1.1, 1.2, 1.25, 1.5, 1.75, 2, 2.5, 3]" :key="r"><button :class="$store.player.rate === r && 'active'" @click="$store.player.setRate(r)" x-text="r + '×'"></button></template>
+            </div>
+          </div>
+          <div class="position-relative" x-data="{ open: false }" @click.outside="open = false">
+            <button class="btn btn-ghost btn-sm" @click="open = !open" title="Chapters" aria-label="Chapters"><i class="bi bi-list-ol"></i></button>
+            <div class="menu" x-show="open" x-cloak style="bottom:calc(100% + 6px);top:auto;min-width:300px">
+              <template x-for="(c, idx) in $store.player.chapters" :key="idx">
+                <button :class="$store.player.chapterIndex === idx && 'active'" @click="$store.player.seek(c.start); open = false"><span class="text-truncate" x-text="c.title"></span><span class="ms-auto mono small text-muted" x-text="fmt.clock(c.start)"></span></button>
+              </template>
+            </div>
+          </div>
+          <button class="btn btn-ghost btn-sm btn-icon" @click="$store.player.stop()" title="Close player" aria-label="Close player"><i class="bi bi-x-lg"></i></button>
+        </div>
+      </div>
+      <div class="scrub">
+        <span x-text="fmt.clock($store.player.time)"></span>
+        <input type="range" min="0" :max="$store.player.duration" step="1" :value="$store.player.time" @change="$store.player.seek(+$event.target.value)" aria-label="Seek">
+        <span x-text="'-' + fmt.clock(($store.player.duration - $store.player.time) / $store.player.rate)"></span>
+      </div>
+    </div>
+  </template>
+</div>
+</template>
+
+<!-- ================================================================ dialogs (confirm / alert) -->
+<template x-for="(d, i) in $store.dialogs.stack" :key="d.id">
+  <div class="ui-modal sm dialog" :style="`z-index:${1080 + i}`" role="alertdialog" aria-modal="true" :aria-labelledby="`dlg-title-${d.id}`"
+       x-init="$nextTick(() => { const el = $el.querySelector(d.input ? 'input' : (d.danger && d.kind === 'confirm' ? '[data-cancel]' : '[data-ok]')); if (el) { el.focus(); if (d.input && el.select) el.select(); } })">
+    <div class="backdrop" @click="$store.dialogs.close(d, false)"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 class="h5 m-0 d-flex align-items-center gap-2" :id="`dlg-title-${d.id}`">
+          <i class="bi" :class="d.danger ? 'bi-exclamation-triangle-fill dialog-icon-danger' : (d.input ? 'bi-pencil' : 'bi-question-circle dialog-icon')"></i>
+          <span x-text="d.title || (d.kind === 'alert' ? 'Notice' : 'Are you sure?')"></span>
+        </h2>
+        <button type="button" class="btn-close" data-dismiss aria-label="Close" @click="$store.dialogs.close(d, false)"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-0" x-show="d.message" x-text="d.message"></p>
+        <div class="mt-3" x-show="d.input">
+          <label class="form-label" x-show="d.inputLabel" :for="`dlg-input-${d.id}`" x-text="d.inputLabel"></label>
+          <input class="form-control" :id="`dlg-input-${d.id}`" x-model="d.inputValue" @keydown.enter.prevent="$store.dialogs.accept(d)">
+        </div>
+        <div class="dialog-detail mono mt-3" x-show="d.detail" x-text="d.detail"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" data-cancel x-show="d.kind === 'confirm'" @click="$store.dialogs.close(d, false)" x-text="d.cancelText"></button>
+        <button type="button" data-ok :class="d.danger ? 'btn btn-danger-solid' : 'btn btn-accent'" @click="$store.dialogs.accept(d)" x-text="d.confirmText"></button>
+      </div>
+    </div>
+  </div>
+</template>
+
+<!-- ================================================================ toasts -->
+<div class="toasts" x-data aria-live="polite">
+  <template x-for="t in $store.app.toasts" :key="t.id">
+    <div class="toast-ui d-flex align-items-start gap-2" :class="t.kind" role="status">
+      <span class="flex-grow-1" x-text="t.message"></span>
+      <template x-if="t.action"><a class="fw-semibold text-nowrap" :href="t.action.href" @click="$store.app.dismissToast(t.id)" x-text="t.action.label"></a></template>
+      <button type="button" class="btn-close btn-close-sm" style="font-size:.7rem" aria-label="Dismiss" @click="$store.app.dismissToast(t.id)"></button>
+    </div>
+  </template>
+</div>
+</body>
+</html>

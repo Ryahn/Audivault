@@ -1,0 +1,12 @@
+.venv
+data
+docker-data
+audiobooks
+import
+tests
+testdata
+**/__pycache__
+**/*.pyc
+.git
+.gitignore
+README.md

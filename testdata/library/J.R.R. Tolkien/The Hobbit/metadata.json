@@ -1,0 +1,28 @@
+{
+  "tags": [],
+  "chapters": [
+    {
+      "id": 0,
+      "start": 0.0,
+      "end": 5.968,
+      "title": "Some Loose Import"
+    }
+  ],
+  "title": "The Hobbit",
+  "subtitle": null,
+  "authors": [
+    "J.R.R. Tolkien"
+  ],
+  "narrators": [],
+  "series": [],
+  "genres": [],
+  "publishedYear": null,
+  "publishedDate": null,
+  "publisher": null,
+  "description": null,
+  "isbn": null,
+  "asin": null,
+  "language": null,
+  "explicit": false,
+  "abridged": false
+}

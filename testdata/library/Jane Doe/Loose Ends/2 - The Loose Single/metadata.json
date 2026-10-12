@@ -1,0 +1,36 @@
+{
+  "tags": [],
+  "chapters": [
+    {
+      "id": 0,
+      "start": 0.0,
+      "end": 5.0,
+      "title": "A"
+    },
+    {
+      "id": 1,
+      "start": 5.0,
+      "end": 12.0,
+      "title": "B"
+    }
+  ],
+  "title": "The Loose Single",
+  "subtitle": null,
+  "authors": [
+    "Jane Doe"
+  ],
+  "narrators": [],
+  "series": [
+    "Loose Ends #2"
+  ],
+  "genres": [],
+  "publishedYear": null,
+  "publishedDate": null,
+  "publisher": null,
+  "description": null,
+  "isbn": null,
+  "asin": null,
+  "language": null,
+  "explicit": false,
+  "abridged": false
+}

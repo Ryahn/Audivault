@@ -1,0 +1,38 @@
+{
+  "tags": [],
+  "chapters": [
+    {
+      "id": 0,
+      "start": 0.0,
+      "end": 9.956,
+      "title": "01"
+    },
+    {
+      "id": 1,
+      "start": 9.956,
+      "end": 19.912,
+      "title": "02"
+    }
+  ],
+  "title": "Dune",
+  "subtitle": null,
+  "authors": [
+    "Frank Herbert"
+  ],
+  "narrators": [
+    "Scott Brick"
+  ],
+  "series": [
+    "Dune #1"
+  ],
+  "genres": [],
+  "publishedYear": "1965",
+  "publishedDate": null,
+  "publisher": null,
+  "description": null,
+  "isbn": null,
+  "asin": null,
+  "language": null,
+  "explicit": false,
+  "abridged": false
+}

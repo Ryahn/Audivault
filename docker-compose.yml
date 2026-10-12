@@ -1,0 +1,37 @@
+services:
+  audivault:
+    build: .
+    image: audivault:latest
+    container_name: audivault
+    restart: unless-stopped
+    ports:
+      # Host port. Change HOST_PORT (or this line) if 13378 is taken, e.g. by Audiobookshelf itself.
+      - "${HOST_PORT:-13378}:13378"
+    environment:
+      # User/group that will own files the server writes (renamed folders, imports, covers).
+      # Match these to the owner of your audiobook folders (`id -u` / `id -g` on Linux).
+      - PUID=1000
+      - PGID=1000
+      - TZ=${TIMEZONE:-America/New_York}
+      # Folder watching: file events from Windows/macOS hosts (Docker Desktop) and network
+      # shares don't reach containers, so poll instead. On a Linux host with local disks you
+      # can set WATCH_POLLING=0 for instant detection.
+      - ABSTREAM_WATCH_POLLING=${WATCH_POLLING:-1}
+      # Rollback journal. WAL's sidecar files are dropped by Docker Desktop bind
+      # mounts, and the next connection then fails with "unable to open database file".
+      # Set SQLITE_JOURNAL=WAL on a Linux host whose database is on a local disk.
+      - ABSTREAM_SQLITE_JOURNAL=${SQLITE_JOURNAL:-DELETE}
+      # Days to keep discarded duplicates in .abstream-trash before deleting them (0 = forever).
+      # Leave TRASH_DAYS empty to manage this in the app (Settings -> Trash) instead.
+      - ABSTREAM_TRASH_DAYS=${TRASH_DAYS:-}
+    volumes:
+      # Database and settings
+      - ./docker-data/config:/config
+      # Cached covers and author images
+      - ./docker-data/metadata:/metadata
+      # Your audiobooks. Inside the app, add the library folder as /audiobooks
+      - ./audiobooks:/audiobooks
+      - D:/Audiobooks:/audiobooks2
+      - D:/Audiobooks_Audible:/audiobooks_audible
+      # Optional inbox for the Import page. Set the library's import folder to /import
+      - ./import:/import

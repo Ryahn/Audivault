@@ -1,0 +1,26 @@
+.venv/
+data/
+__pycache__/
+*.pyc
+docker-data/
+audiobooks/
+import/
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/
+.env
+
+# Cursor local config. Project rules in .cursor/rules/ are tracked.
+.cursor/*
+!.cursor/rules/
+!.cursor/rules/**
+
+# Plugin runtime data (catalog cache, state, installed copies).
+# The host in app/extensions/ is tracked. These already sit under data/ and
+# docker-data/; listed so a later config move cannot commit them.
+data/config/plugins/
+docker-data/config/plugins/
+
+# SQLite sidecars written beside the database.
+*.db-wal
+*.db-shm
