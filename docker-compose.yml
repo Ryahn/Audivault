@@ -16,14 +16,14 @@ services:
       # Folder watching: file events from Windows/macOS hosts (Docker Desktop) and network
       # shares don't reach containers, so poll instead. On a Linux host with local disks you
       # can set WATCH_POLLING=0 for instant detection.
-      - ABSTREAM_WATCH_POLLING=${WATCH_POLLING:-1}
+      - AUDIVAULT_WATCH_POLLING=${WATCH_POLLING:-1}
       # Rollback journal. WAL's sidecar files are dropped by Docker Desktop bind
       # mounts, and the next connection then fails with "unable to open database file".
       # Set SQLITE_JOURNAL=WAL on a Linux host whose database is on a local disk.
-      - ABSTREAM_SQLITE_JOURNAL=${SQLITE_JOURNAL:-DELETE}
+      - AUDIVAULT_SQLITE_JOURNAL=${SQLITE_JOURNAL:-DELETE}
       # Days to keep discarded duplicates in .abstream-trash before deleting them (0 = forever).
       # Leave TRASH_DAYS empty to manage this in the app (Settings -> Trash) instead.
-      - ABSTREAM_TRASH_DAYS=${TRASH_DAYS:-}
+      - AUDIVAULT_TRASH_DAYS=${TRASH_DAYS:-}
     volumes:
       # Database and settings
       - ./docker-data/config:/config

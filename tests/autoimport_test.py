@@ -1,7 +1,7 @@
 """Tests for the default import operation and automatic import.
 
 Needs internet access (books are matched against Audible). Run after api_test.py
-on a fresh server started with ABSTREAM_WATCH_DELAY=2 and ABSTREAM_IMPORT_SETTLE=3:
+on a fresh server started with AUDIVAULT_WATCH_DELAY=2 and AUDIVAULT_IMPORT_SETTLE=3:
     python tests/autoimport_test.py ./testdata
 """
 import os
@@ -13,7 +13,7 @@ from pathlib import Path
 import httpx
 from mutagen.id3 import ID3, TALB, TIT2, TPE1, TXXX
 
-BASE = os.environ.get("ABSTREAM_TEST_URL", "http://127.0.0.1:13399")
+BASE = os.environ.get("AUDIVAULT_TEST_URL", "http://127.0.0.1:13399")
 TD = Path(sys.argv[1])
 FAIL = []
 imp = TD / "import"

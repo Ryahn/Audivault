@@ -2,7 +2,7 @@
 
 When a library has `autoImport` on, new books in its import folder are:
 1. left alone until their files have stopped changing (newest file at least
-   ABSTREAM_IMPORT_SETTLE seconds old, sizes stable), so half-copied books are
+   AUDIVAULT_IMPORT_SETTLE seconds old, sizes stable), so half-copied books are
    never moved;
 2. matched against the library's metadata provider. A confident match is
    imported: same ASIN; a closely matching title and author (a last name is
@@ -38,7 +38,7 @@ from . import organizer
 
 log = logging.getLogger("abstream.autoimport")
 
-SETTLE_SECONDS = float(os.environ.get("ABSTREAM_IMPORT_SETTLE", "60"))
+SETTLE_SECONDS = float(os.environ.get("AUDIVAULT_IMPORT_SETTLE", "60"))
 MAX_WAIT_SECONDS = 15 * 60
 # Review outcomes from an older matcher are searched once more.
 MATCHER_VERSION = 2
@@ -287,7 +287,13 @@ def run(task: dict | None, library_id: str) -> dict:
     if imported or review or failed or skipped:
         remaining = len(organizer.list_import_candidates(library_id)["candidates"])
         events.publish({"type": "import_changed", "libraryId": library_id, "count": remaining, "new": 0})
-    return {"imported": imported, "review": review, "failed": failed, "skipped": skipped, "mode": mode, "libraryId": library_id}
+    result = {"imported": imported, "review": review, "failed": failed, "skipped": skipped, "mode": mode, "libraryId": library_id}
+    try:
+        from ..extensions.host import emit
+        emit("import_finished", library_id=library_id, result=result)
+    except Exception:
+        log.exception("import listeners skipped")
+    return result
 
 
 def _result_key(result: dict) -> str:

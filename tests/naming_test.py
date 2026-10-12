@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 
 _tmp = tempfile.mkdtemp(prefix="abstream-naming-")
-os.environ["ABSTREAM_DATA_DIR"] = _tmp
+os.environ["AUDIVAULT_DATA_DIR"] = _tmp
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))

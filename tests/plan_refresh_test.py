@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 _tmp = tempfile.mkdtemp(prefix="abstream-plan-")
-os.environ["ABSTREAM_DATA_DIR"] = _tmp
+os.environ["AUDIVAULT_DATA_DIR"] = _tmp
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))

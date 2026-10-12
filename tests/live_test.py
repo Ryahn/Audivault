@@ -1,6 +1,6 @@
 """Tests for .cue chapters, folder watching (partial scans) and the live event stream.
 
-Run after api_test.py against the same server, started with ABSTREAM_WATCH_DELAY=2
+Run after api_test.py against the same server, started with AUDIVAULT_WATCH_DELAY=2
 so watcher-triggered scans happen quickly:
     python tests/live_test.py ./testdata
 """
@@ -14,7 +14,7 @@ from pathlib import Path
 
 import httpx
 
-BASE = os.environ.get("ABSTREAM_TEST_URL", "http://127.0.0.1:13399")
+BASE = os.environ.get("AUDIVAULT_TEST_URL", "http://127.0.0.1:13399")
 TD = Path(sys.argv[1])
 FAIL = []
 

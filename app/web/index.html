@@ -68,6 +68,9 @@
         <template x-if="$store.app.isAdmin"><a href="#/import" :class="$store.app.route.name === 'import' && 'active'">Import</a></template>
         <template x-if="$store.app.isAdmin"><a href="#/organize" :class="$store.app.route.name === 'organize' && 'active'">Organize</a></template>
         <template x-if="$store.app.isAdmin"><a href="#/duplicates" :class="$store.app.route.name === 'duplicates' && 'active'">Duplicates <span class="nav-badge" x-show="$store.app.duplicateCount" x-text="$store.app.duplicateCount"></span></a></template>
+        <template x-for="item in $store.app.pluginNav" :key="item.id">
+          <a :href="`#/settings/plugins/${item.id}`" :class="$store.app.route.params[0] === 'plugins' && $store.app.route.params[1] === item.id && 'active'" x-text="item.label"></a>
+        </template>
       </nav>
       <form class="search flex-grow-1 ms-auto" @submit.prevent="$store.app.doSearch()">
         <div class="input-group input-group-sm">
@@ -97,6 +100,9 @@
     <template x-if="$store.app.isAdmin"><a href="#/import" :class="$store.app.route.name === 'import' && 'active'">Import</a></template>
     <template x-if="$store.app.isAdmin"><a href="#/organize" :class="$store.app.route.name === 'organize' && 'active'">Organize</a></template>
     <template x-if="$store.app.isAdmin"><a href="#/duplicates" :class="$store.app.route.name === 'duplicates' && 'active'">Duplicates <span class="nav-badge" x-show="$store.app.duplicateCount" x-text="$store.app.duplicateCount"></span></a></template>
+    <template x-for="item in $store.app.pluginNav" :key="item.id">
+      <a :href="`#/settings/plugins/${item.id}`" x-text="item.label"></a>
+    </template>
     <template x-if="$store.app.isAdmin"><a href="#/settings/libraries" :class="$store.app.route.name === 'settings' && 'active'">Settings</a></template>
   </nav>
 
@@ -1122,8 +1128,87 @@
           <template x-if="$store.app.isAdmin"><button :class="tab === 'keys' && 'active'" @click="setTab('keys')">API keys</button></template>
           <template x-if="$store.app.isAdmin"><button :class="tab === 'activity' && 'active'" @click="setTab('activity')">Activity</button></template>
           <template x-if="$store.app.isAdmin"><button :class="tab === 'trash' && 'active'" @click="setTab('trash')">Trash</button></template>
+          <template x-if="$store.app.isAdmin"><button :class="tab === 'plugins' && 'active'" @click="setTab('plugins')">Plugins</button></template>
           <button :class="tab === 'account' && 'active'" @click="setTab('account')">Account</button>
         </div>
+
+        <template x-if="tab === 'plugins' && $store.app.isAdmin">
+          <div>
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+              <div class="small text-muted">
+                Catalog <span class="mono" x-text="plugins.catalog.owner && (plugins.catalog.owner + '/' + plugins.catalog.repo + '@' + plugins.catalog.ref)"></span>
+                <template x-if="plugins.cache.lastError"><span class="text-danger" x-text="' · ' + plugins.cache.lastError"></span></template>
+              </div>
+              <button class="btn btn-ghost btn-sm ms-auto" @click="refreshPlugins()">Refresh</button>
+            </div>
+            <h2 class="h6">Installed</h2>
+            <template x-if="!plugins.installed.length"><p class="text-muted small">No plugins installed. The library works without any.</p></template>
+            <template x-for="p in plugins.installed" :key="p.id">
+              <div class="panel mb-3">
+                <div class="panel-body">
+                  <div class="d-flex flex-wrap gap-2 align-items-start">
+                    <div class="me-auto">
+                      <div class="fw-semibold" x-text="p.name"></div>
+                      <div class="small text-muted" x-text="p.publisher + ' · ' + (p.loadedVersion || p.desiredVersion || '') + (p.commit ? ' · ' + p.commit.slice(0, 12) : '')"></div>
+                      <div class="small" x-text="p.status"></div>
+                      <div class="small" x-text="p.compatible ? 'Compatible' : p.compatibility"></div>
+                      <div class="small text-muted" x-text="(p.capabilities || []).join(', ')"></div>
+                      <div class="small text-warning" x-show="p.restartRequired">Restart to apply</div>
+                      <div class="small text-danger" x-show="p.error" x-text="(p.errorKind || 'error') + ': ' + p.error"></div>
+                    </div>
+                    <button class="btn btn-ghost btn-sm" @click="setPluginEnabled(p, !p.enabled)" x-text="p.enabled ? 'Disable' : 'Enable'"></button>
+                    <button class="btn btn-ghost btn-sm" x-show="p.previousVersion" @click="rollbackPlugin(p)">Rollback</button>
+                    <a class="btn btn-ghost btn-sm" :href="`#/settings/plugins/${p.id}`">Settings</a>
+                    <label class="form-check form-check-inline small mb-0">
+                      <input class="form-check-input" type="checkbox" x-model="pluginDelete[p.id]">
+                      <span class="form-check-label">Delete settings</span>
+                    </label>
+                    <button class="btn btn-ghost btn-sm" @click="uninstallPlugin(p)">Uninstall</button>
+                    <button class="btn btn-ghost btn-sm" @click="removePluginSettings(p)">Remove settings</button>
+                  </div>
+                  <template x-if="$store.app.route.params[1] === p.id">
+                    <form class="mt-3" @submit.prevent="savePluginSettings(p)">
+                      <template x-for="field in p.settings" :key="field.key">
+                        <div class="mb-2">
+                          <label class="form-label" x-text="field.label"></label>
+                          <template x-if="field.type === 'string'"><input class="form-control" x-model="pluginValues[field.key]"></template>
+                          <template x-if="field.type === 'number'"><input class="form-control" type="number" x-model.number="pluginValues[field.key]"></template>
+                          <template x-if="field.type === 'boolean'"><div class="form-check"><input class="form-check-input" type="checkbox" x-model="pluginValues[field.key]"></div></template>
+                          <template x-if="field.type === 'select'">
+                            <select class="form-select" x-model="pluginValues[field.key]">
+                              <template x-for="option in field.options" :key="option.value"><option :value="option.value" x-text="option.label"></option></template>
+                            </select>
+                          </template>
+                          <template x-if="field.type === 'secret'">
+                            <input class="form-control" type="password" :placeholder="field.secretSet ? 'Saved. Enter a new value to replace it.' : ''" x-model="pluginValues[field.key]" autocomplete="off">
+                          </template>
+                        </div>
+                      </template>
+                      <button class="btn btn-accent btn-sm">Save settings</button>
+                    </form>
+                  </template>
+                </div>
+              </div>
+            </template>
+            <h2 class="h6 mt-4">Catalog</h2>
+            <template x-if="!plugins.available.length"><p class="text-muted small">No cached catalog yet. Refresh pulls the manifest. Installed plugins can still be managed while GitHub is unavailable.</p></template>
+            <template x-for="p in plugins.available" :key="p.id">
+              <div class="panel mb-2">
+                <div class="panel-body d-flex flex-wrap gap-2 align-items-start">
+                  <div class="me-auto">
+                    <div class="fw-semibold" x-text="p.name + ' ' + p.version"></div>
+                    <div class="small text-muted" x-text="p.publisher + ' · ' + plugins.catalog.owner + '/' + plugins.catalog.repo + ' · ' + p.commit"></div>
+                    <div class="small" x-text="p.summary"></div>
+                    <div class="small" x-text="(p.capabilities || []).join(', ') || 'no extra capabilities'"></div>
+                    <div class="small text-danger" x-show="!p.compatible" x-text="p.compatibility"></div>
+                  </div>
+                  <button class="btn btn-accent btn-sm" x-show="!p.installedVersion && p.compatible" @click="installPlugin(p)">Install</button>
+                  <button class="btn btn-accent btn-sm" x-show="p.updateAvailable && p.compatible" @click="installPlugin(p, true)">Update</button>
+                </div>
+              </div>
+            </template>
+          </div>
+        </template>
 
         <!-- libraries -->
         <template x-if="tab === 'libraries' && $store.app.isAdmin">
@@ -1288,7 +1373,7 @@
                     <button type="button" class="btn btn-accent btn-sm" x-show="!trash.lockedByEnv" :disabled="trashDays === trash.retentionDays" @click="saveTrashDays()">Save</button>
                   </div>
                   <div class="form-text" x-show="!trash.lockedByEnv">0 keeps the trash forever. Old trash is checked hourly.</div>
-                  <div class="form-text" x-show="trash.lockedByEnv"><i class="bi bi-lock"></i> Set by <span class="mono">ABSTREAM_TRASH_DAYS</span> (<span class="mono">TRASH_DAYS</span> in Docker Compose). Clear it there to manage this here.</div>
+                  <div class="form-text" x-show="trash.lockedByEnv"><i class="bi bi-lock"></i> Set by <span class="mono">AUDIVAULT_TRASH_DAYS</span> (<span class="mono">TRASH_DAYS</span> in Docker Compose). Clear it there to manage this here.</div>
                 </div>
                 <div class="col-md-5 text-md-end">
                   <div class="small text-muted mb-1" x-text="trashSummary()"></div>

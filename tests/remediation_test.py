@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 # Use a throwaway data dir before importing app modules
 _tmp = tempfile.mkdtemp(prefix="abstream-test-")
-os.environ["ABSTREAM_DATA_DIR"] = _tmp
+os.environ["AUDIVAULT_DATA_DIR"] = _tmp
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))

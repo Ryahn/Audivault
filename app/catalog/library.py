@@ -33,7 +33,7 @@ DEFAULT_LIBRARY_SETTINGS = {
     "importMode": "move",         # default import operation: move | copy
     "autoImport": False,          # import new books from the import folder automatically
     "organizeOnScan": False,
-    "watchMode": "auto",          # auto | native | polling  (auto = polling if ABSTREAM_WATCH_POLLING is set)
+    "watchMode": "auto",          # auto | native | polling  (auto = polling if AUDIVAULT_WATCH_POLLING is set)
     "watchImportFolder": True,
 }
 

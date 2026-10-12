@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 _root = tempfile.mkdtemp(prefix="abstream-compat-")
-os.environ["ABSTREAM_DATA_DIR"] = _root
+os.environ["AUDIVAULT_DATA_DIR"] = _root
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from fastapi.testclient import TestClient  # noqa: E402

@@ -46,7 +46,7 @@ TAGS = [
     {"name": "Account", "description": "The signed-in user: profile, progress, bookmarks, and listening history."},
     {"name": "Playback", "description": "Play sessions, progress sync, and the public audio stream."},
     {"name": "Administration", "description": "Users, API keys, and server settings. Admin only."},
-    {"name": "Audivault", "description": "Import, organize, duplicates, trash, folder watching, and live updates. Most of these require an admin. Template preview needs any signed-in user, and excluding an audio file needs the update permission."},
+    {"name": "Audivault", "description": "Import, organize, duplicates, trash, folder watching, plugins, and live updates. Most of these require an admin. Template preview needs any signed-in user, and excluding an audio file needs the update permission."},
 ]
 
 _PUBLIC = {

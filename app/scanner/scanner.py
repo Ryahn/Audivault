@@ -534,6 +534,11 @@ def scan_item_entry(lib: dict, folder: dict, rel_path: str, entry: dict, existin
     item_dir = None if entry["is_file"] else item_path
     if not existing or force:
         md = gather_metadata(settings, rel_path, bool(entry["is_file"]), item_dir, included)
+        try:
+            from ..extensions.host import apply_processors
+            md = apply_processors(md)
+        except Exception:
+            log.exception("metadata processors skipped")
         fields.update({
             "title": md["title"], "subtitle": md.get("subtitle"), "publisher": md.get("publisher"),
             "published_year": md.get("published_year"), "published_date": md.get("published_date"),
@@ -681,6 +686,11 @@ def scan_library(task: dict | None, library_id: str, force: bool = False, scopes
     if stats["added"] or stats["organized"] or not partial:
         from ..management import duplicates
         duplicates.notify_new()
+    try:
+        from ..extensions.host import emit
+        emit("scan_finished", library_id=library_id, stats=dict(stats))
+    except Exception:
+        log.exception("scan listeners skipped")
     return stats
 
 

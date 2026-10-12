@@ -20,6 +20,7 @@ export function settingsView() {
     tab: 'libraries', users: [], keys: [], activity: [], editingLib: null, savingLib: false, userForm: null, newKey: null, keyForm: null,
     picker: null, preview: [], pw: { password: '', newPassword: '' }, providers: [], toggles: LIB_TOGGLES, watching: [],
     trash: { retentionDays: 30, lockedByEnv: false, entries: [] }, trashDays: 30, trashLoading: true, trashError: false,
+    plugins: { catalog: {}, cache: {}, installed: [], available: [], nav: [] }, pluginValues: {}, pluginDelete: {},
     destroy() {
       window.removeEventListener('abstream-activity', this._onActivity);
       window.removeEventListener('abstream-trash-changed', this._onTrash);
@@ -33,6 +34,11 @@ export function settingsView() {
       this.tab = app.route.params[0] || (app.isAdmin ? 'libraries' : 'account');
       api('GET', '/api/search/providers').then(d => { this.providers = d.providers.books; }).catch(() => { });
       this.loadTab();
+      this.$watch('$store.app.route.params', () => {
+        if (this.tab !== 'plugins') return;
+        const plugin = (this.plugins.installed || []).find(item => item.id === globalThis.Alpine.store('app').route.params[1]);
+        if (plugin) this.fillPluginValues(plugin);
+      });
     },
     setTab(t) { this.tab = t; history.replaceState(null, '', `#/settings/${t}`); this.loadTab(); },
     async loadTab() {
@@ -55,6 +61,12 @@ export function settingsView() {
         if (this.tab === 'activity') {
           this.activity = (await api('GET', '/api/abstream/activity')).activity;
           this.watching = (await api('GET', '/api/abstream/watcher')).watching;
+        }
+        if (this.tab === 'plugins') {
+          this.plugins = await api('GET', '/api/abstream/plugins');
+          const focus = globalThis.Alpine.store('app').route.params[1];
+          const plugin = (this.plugins.installed || []).find(item => item.id === focus);
+          if (plugin) this.fillPluginValues(plugin);
         }
       } catch (e) { globalThis.Alpine.store('app').toast(e.message, 'error'); }
     },
@@ -235,6 +247,85 @@ export function settingsView() {
         await api('DELETE', `/api/abstream/trash/${encodeURIComponent(entry.folderId)}/${encodeURIComponent(entry.batch)}${q}`);
         globalThis.Alpine.store('app').toast('Deleted from the trash', 'success');
         await this.loadTab();
+      } catch (e) { globalThis.Alpine.store('app').toast(e.message, 'error'); }
+    },
+    pluginRecord(id) { return (this.plugins.installed || []).find(item => item.id === id); },
+    fillPluginValues(plugin) {
+      this.pluginValues = {};
+      for (const field of plugin.settings || []) {
+        if (field.type === 'secret') this.pluginValues[field.key] = '';
+        else if (field.type === 'boolean') this.pluginValues[field.key] = !!field.value;
+        else this.pluginValues[field.key] = field.value ?? '';
+      }
+    },
+    async refreshPlugins() {
+      try {
+        this.plugins = await api('POST', '/api/abstream/plugins/refresh');
+        globalThis.Alpine.store('app').pluginNav = this.plugins.nav || [];
+      } catch (e) { globalThis.Alpine.store('app').toast(e.message, 'error'); }
+    },
+    async installPlugin(plugin, update = false) {
+      const repo = `${this.plugins.catalog.owner}/${this.plugins.catalog.repo}`;
+      const caps = (plugin.capabilities || []).join(', ') || 'none';
+      const ok = await ui.confirm({
+        title: `${update ? 'Update' : 'Install'} ${plugin.name}?`,
+        message: `Publisher: ${plugin.publisher}. Repository: ${repo}. Commit: ${plugin.commit}. Capabilities: ${caps}.`,
+        confirmText: update ? 'Update' : 'Install',
+      });
+      if (!ok) return;
+      try {
+        const path = update ? 'update' : 'install';
+        this.plugins = await api('POST', `/api/abstream/plugins/${plugin.id}/${path}`, { confirm: true });
+        globalThis.Alpine.store('app').toast('Restart to apply', 'success');
+      } catch (e) { globalThis.Alpine.store('app').toast(e.message, 'error'); }
+    },
+    async setPluginEnabled(plugin, enabled) {
+      try {
+        this.plugins = await api('POST', `/api/abstream/plugins/${plugin.id}/${enabled ? 'enable' : 'disable'}`);
+        globalThis.Alpine.store('app').toast('Restart to apply', 'success');
+      } catch (e) { globalThis.Alpine.store('app').toast(e.message, 'error'); }
+    },
+    async rollbackPlugin(plugin) {
+      const ok = await ui.confirm({ title: `Roll back ${plugin.name}?`, message: `The previous version is ${plugin.previousVersion}. Restart to apply.`, confirmText: 'Roll back' });
+      if (!ok) return;
+      try {
+        this.plugins = await api('POST', `/api/abstream/plugins/${plugin.id}/rollback`);
+        globalThis.Alpine.store('app').toast('Restart to apply', 'success');
+      } catch (e) { globalThis.Alpine.store('app').toast(e.message, 'error'); }
+    },
+    async uninstallPlugin(plugin) {
+      const deleteData = !!this.pluginDelete[plugin.id];
+      const ok = await ui.confirm({
+        title: `Uninstall ${plugin.name}?`,
+        message: deleteData
+          ? 'The plugin code and its saved settings are removed after a restart.'
+          : 'The plugin code is removed after a restart. Its saved settings are kept.',
+        confirmText: 'Uninstall', danger: true,
+      });
+      if (!ok) return;
+      try {
+        this.plugins = await api('POST', `/api/abstream/plugins/${plugin.id}/uninstall`, { deleteData });
+        globalThis.Alpine.store('app').toast('Restart to apply', 'success');
+      } catch (e) { globalThis.Alpine.store('app').toast(e.message, 'error'); }
+    },
+    async removePluginSettings(plugin) {
+      const ok = await ui.confirm({ title: 'Remove settings?', message: `${plugin.name} stays installed. Its saved settings and secrets are deleted.`, confirmText: 'Remove settings', danger: true });
+      if (!ok) return;
+      try {
+        this.plugins = await api('POST', `/api/abstream/plugins/${plugin.id}/settings/remove`);
+        globalThis.Alpine.store('app').toast('Settings removed', 'success');
+      } catch (e) { globalThis.Alpine.store('app').toast(e.message, 'error'); }
+    },
+    async savePluginSettings(plugin) {
+      const values = { ...this.pluginValues };
+      for (const field of plugin.settings || []) {
+        if (field.type === 'secret' && !values[field.key]) delete values[field.key];
+      }
+      try {
+        this.plugins = await api('POST', `/api/abstream/plugins/${plugin.id}/settings`, { values });
+        const fresh = this.pluginRecord(plugin.id);
+        if (fresh) this.fillPluginValues(fresh);
+        globalThis.Alpine.store('app').toast('Settings saved', 'success');
       } catch (e) { globalThis.Alpine.store('app').toast(e.message, 'error'); }
     },
     async restoreTrash(entry, book) {

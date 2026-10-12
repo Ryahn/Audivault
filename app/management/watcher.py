@@ -2,13 +2,13 @@
 
 Changes are collected per library and grouped by top-level entry (usually an
 author folder, or a loose file). Once a library has been quiet for
-ABSTREAM_WATCH_DELAY seconds (so a book that is still being copied is not
+AUDIVAULT_WATCH_DELAY seconds (so a book that is still being copied is not
 scanned half-way), only those entries are rescanned. Import-folder changes are
 announced to web clients; importing still needs a person to confirm metadata.
 
 Native file events don't work everywhere (network shares, Docker Desktop on
 Windows/macOS), so a library can use polling instead; `auto` picks polling when
-ABSTREAM_WATCH_POLLING is set.
+AUDIVAULT_WATCH_POLLING is set.
 """
 
 import logging
@@ -26,9 +26,9 @@ from ..scanner import scanner
 
 log = logging.getLogger("abstream.watcher")
 
-FORCE_POLLING = os.environ.get("ABSTREAM_WATCH_POLLING", "").lower() in ("1", "true", "yes")
-POLL_INTERVAL = float(os.environ.get("ABSTREAM_WATCH_INTERVAL", "30"))
-QUIET_SECONDS = float(os.environ.get("ABSTREAM_WATCH_DELAY", "15"))
+FORCE_POLLING = os.environ.get("AUDIVAULT_WATCH_POLLING", "").lower() in ("1", "true", "yes")
+POLL_INTERVAL = float(os.environ.get("AUDIVAULT_WATCH_INTERVAL", "30"))
+QUIET_SECONDS = float(os.environ.get("AUDIVAULT_WATCH_DELAY", "15"))
 
 IGNORED_NAMES = {"Thumbs.db", ".DS_Store", "desktop.ini"}
 IGNORED_SUFFIXES = (".abstream-tmp", ".part", ".tmp", ".crdownload", ".partial", "~")

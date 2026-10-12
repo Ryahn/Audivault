@@ -1,7 +1,7 @@
 """Trash folders (`<library folder>/.abstream-trash/<YYYYMMDD-HHMMSS>/<book path>`):
 listing, restoring, deleting, and automatic emptying after a retention period.
 
-Retention comes from ABSTREAM_TRASH_DAYS when it is set (the app setting is then
+Retention comes from AUDIVAULT_TRASH_DAYS when it is set (the app setting is then
 locked), otherwise from the app setting. 0 means keep forever.
 """
 
@@ -27,13 +27,13 @@ SETTING_KEY = "trash_retention_days"
 # ------------------------------------------------------------------ retention setting
 
 def env_days() -> int | None:
-    raw = os.environ.get("ABSTREAM_TRASH_DAYS", "").strip()
+    raw = os.environ.get("AUDIVAULT_TRASH_DAYS", "").strip()
     if not raw:
         return None
     try:
         return max(0, int(raw))
     except ValueError:
-        log.warning("Ignoring invalid ABSTREAM_TRASH_DAYS=%r", raw)
+        log.warning("Ignoring invalid AUDIVAULT_TRASH_DAYS=%r", raw)
         return None
 
 
@@ -47,7 +47,7 @@ def retention_days() -> int:
 
 def set_retention_days(days: int) -> None:
     if env_days() is not None:
-        raise ValueError("Trash retention is set by ABSTREAM_TRASH_DAYS and can't be changed in the app")
+        raise ValueError("Trash retention is set by AUDIVAULT_TRASH_DAYS and can't be changed in the app")
     db.set_setting(SETTING_KEY, max(0, int(days)))
 
 

@@ -260,10 +260,10 @@ def _journal_mode() -> str:
     """WAL is faster, but its -wal/-shm files break on Docker Desktop bind mounts.
 
     When those sidecars disappear while a connection still has them open, every
-    new connection fails with SQLITE_CANTOPEN. ABSTREAM_SQLITE_JOURNAL=DELETE
+    new connection fails with SQLITE_CANTOPEN. AUDIVAULT_SQLITE_JOURNAL=DELETE
     uses a rollback journal instead.
     """
-    mode = os.environ.get("ABSTREAM_SQLITE_JOURNAL", "WAL").strip().upper()
+    mode = os.environ.get("AUDIVAULT_SQLITE_JOURNAL", "WAL").strip().upper()
     return mode if mode in _JOURNAL_MODES else "WAL"
 
 

@@ -5,20 +5,20 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-DATA_DIR = Path(os.environ.get("ABSTREAM_DATA_DIR", BASE_DIR / "data")).resolve()
-CONFIG_DIR = Path(os.environ.get("ABSTREAM_CONFIG_DIR", DATA_DIR / "config")).resolve()
-METADATA_DIR = Path(os.environ.get("ABSTREAM_METADATA_DIR", DATA_DIR / "metadata")).resolve()
+DATA_DIR = Path(os.environ.get("AUDIVAULT_DATA_DIR", BASE_DIR / "data")).resolve()
+CONFIG_DIR = Path(os.environ.get("AUDIVAULT_CONFIG_DIR", DATA_DIR / "config")).resolve()
+METADATA_DIR = Path(os.environ.get("AUDIVAULT_METADATA_DIR", DATA_DIR / "metadata")).resolve()
 DB_PATH = CONFIG_DIR / "abstream.db"
 
-HOST = os.environ.get("ABSTREAM_HOST", "0.0.0.0")
-PORT = int(os.environ.get("ABSTREAM_PORT", "13378"))
+HOST = os.environ.get("AUDIVAULT_HOST", "0.0.0.0")
+PORT = int(os.environ.get("AUDIVAULT_PORT", "13378"))
 
-ACCESS_TOKEN_TTL = int(os.environ.get("ABSTREAM_ACCESS_TTL", str(60 * 60 * 12)))  # 12 hours
-REFRESH_TOKEN_TTL = int(os.environ.get("ABSTREAM_REFRESH_TTL", str(60 * 60 * 24 * 30)))  # 30 days
+ACCESS_TOKEN_TTL = int(os.environ.get("AUDIVAULT_ACCESS_TTL", str(60 * 60 * 12)))  # 12 hours
+REFRESH_TOKEN_TTL = int(os.environ.get("AUDIVAULT_REFRESH_TTL", str(60 * 60 * 24 * 30)))  # 30 days
 
 # Comma-separated origins for CORS. Empty = allow all (Bearer/API clients). When set,
 # credentials are allowed for those origins (first-party web UI + cookie auth).
-_cors = os.environ.get("ABSTREAM_CORS_ORIGINS", "").strip()
+_cors = os.environ.get("AUDIVAULT_CORS_ORIGINS", "").strip()
 CORS_ORIGINS = [o.strip() for o in _cors.split(",") if o.strip()] if _cors else ["*"]
 
 AUDIO_EXTS = {

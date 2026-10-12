@@ -159,6 +159,7 @@ export function registerApp(Alpine) {
     search: '',
     modal: null,          // {type, ...data}
     duplicateCount: 0,
+    pluginNav: [],
     progressMap: {},
 
     get isAdmin() { return this.user && ['root', 'admin'].includes(this.user.type); },
@@ -198,6 +199,13 @@ export function registerApp(Alpine) {
       }
       this.connectEvents();
       this.loadDuplicateCount();
+      this.loadPluginNav();
+    },
+
+    async loadPluginNav() {
+      if (!this.isAdmin) { this.pluginNav = []; return; }
+      try { this.pluginNav = (await api('GET', '/api/abstream/plugins')).nav || []; }
+      catch (e) { this.pluginNav = []; }
     },
 
     async loadDuplicateCount() {

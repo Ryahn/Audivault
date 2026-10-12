@@ -11,9 +11,9 @@ from pathlib import Path
 
 import httpx
 
-BASE = os.environ.get("ABSTREAM_TEST_URL", "http://127.0.0.1:13399")
+BASE = os.environ.get("AUDIVAULT_TEST_URL", "http://127.0.0.1:13399")
 TD = Path(sys.argv[1])
-SRV = os.environ.get("ABSTREAM_TEST_SERVER_ROOT", str(TD)).rstrip("/\\")
+SRV = os.environ.get("AUDIVAULT_TEST_SERVER_ROOT", str(TD)).rstrip("/\\")
 SEP = "/" if SRV.startswith("/") else os.sep
 FAIL = []
 main_root = TD / "library"

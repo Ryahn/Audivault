@@ -16,11 +16,11 @@ COPY run.py docker-entrypoint.sh ./
 RUN sed -i 's/\r$//' docker-entrypoint.sh && chmod +x docker-entrypoint.sh
 
 ENV PYTHONUNBUFFERED=1 \
-    ABSTREAM_HOST=0.0.0.0 \
-    ABSTREAM_PORT=13378 \
-    ABSTREAM_DATA_DIR=/config \
-    ABSTREAM_CONFIG_DIR=/config \
-    ABSTREAM_METADATA_DIR=/metadata \
+    AUDIVAULT_HOST=0.0.0.0 \
+    AUDIVAULT_PORT=13378 \
+    AUDIVAULT_DATA_DIR=/config \
+    AUDIVAULT_CONFIG_DIR=/config \
+    AUDIVAULT_METADATA_DIR=/metadata \
     PUID=1000 \
     PGID=1000
 
@@ -28,7 +28,7 @@ VOLUME ["/config", "/metadata"]
 EXPOSE 13378
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-    CMD python -c "import os, urllib.request; urllib.request.urlopen(f'http://127.0.0.1:{os.environ[\"ABSTREAM_PORT\"]}/healthcheck', timeout=4)" || exit 1
+    CMD python -c "import os, urllib.request; urllib.request.urlopen(f'http://127.0.0.1:{os.environ[\"AUDIVAULT_PORT\"]}/healthcheck', timeout=4)" || exit 1
 
 ENTRYPOINT ["./docker-entrypoint.sh"]
 CMD ["python", "run.py"]

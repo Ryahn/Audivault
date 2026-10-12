@@ -8,7 +8,7 @@ PUID="${PUID:-1000}"
 PGID="${PGID:-1000}"
 
 if [ "$(id -u)" = "0" ]; then
-    for dir in "$ABSTREAM_CONFIG_DIR" "$ABSTREAM_METADATA_DIR"; do
+    for dir in "$AUDIVAULT_CONFIG_DIR" "$AUDIVAULT_METADATA_DIR"; do
         mkdir -p "$dir"
         # Only the app's own folders; audiobook/import folders are never chowned.
         chown -R "$PUID:$PGID" "$dir"

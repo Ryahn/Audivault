@@ -13,7 +13,7 @@ from pathlib import Path
 
 import httpx
 
-BASE = os.environ.get("ABSTREAM_TEST_URL", "http://127.0.0.1:13399")
+BASE = os.environ.get("AUDIVAULT_TEST_URL", "http://127.0.0.1:13399")
 TD = Path(sys.argv[1])
 FAIL = []
 

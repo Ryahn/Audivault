@@ -12,7 +12,7 @@ from pathlib import Path
 
 import httpx
 
-BASE = os.environ.get("ABSTREAM_TEST_URL", "http://127.0.0.1:13399")
+BASE = os.environ.get("AUDIVAULT_TEST_URL", "http://127.0.0.1:13399")
 TD = Path(sys.argv[1])
 FAIL = []
 lib_root = TD / "library"
@@ -118,12 +118,12 @@ check(not trash_root.exists() and trash()["entries"] == [], "trash folder remove
 c.patch("/api/abstream/trash/settings", headers=H, json={"retentionDays": 30})
 
 print("environment variable lock")
-code = ("import os; os.environ['ABSTREAM_TRASH_DAYS']='14'; from app.management import trash; "
+code = ("import os; os.environ['AUDIVAULT_TRASH_DAYS']='14'; from app.management import trash; "
         "assert trash.retention_days() == 14 and trash.env_days() == 14\n"
         "try:\n    trash.set_retention_days(3); print('NOT LOCKED')\nexcept ValueError:\n    print('LOCKED')")
-env = dict(os.environ, ABSTREAM_DATA_DIR=str(TD / "_envcheck"))
+env = dict(os.environ, AUDIVAULT_DATA_DIR=str(TD / "_envcheck"))
 out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env, cwd=Path(__file__).resolve().parent.parent)
-check(out.stdout.strip() == "LOCKED", f"ABSTREAM_TRASH_DAYS overrides and locks the app setting ({out.stdout.strip()} {out.stderr[-200:]})")
+check(out.stdout.strip() == "LOCKED", f"AUDIVAULT_TRASH_DAYS overrides and locks the app setting ({out.stdout.strip()} {out.stderr[-200:]})")
 shutil.rmtree(TD / "_envcheck", ignore_errors=True)
 
 print()

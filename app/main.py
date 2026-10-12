@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import __version__
-from .api import admin, auth_routes, entities, items, libraries, me, sessions
+from .api import admin, auth_routes, entities, items, libraries, me, plugins, sessions
 from .api_spec import DESCRIPTION, TAGS, install_openapi
 from .catalog import library
 from .catalog.locks import LockedError
@@ -43,6 +43,11 @@ def _scheduler() -> None:
             last_purge = time.time()
             tasks.start("trash", "Empty old trash", trash.purge, key="trash", quiet=True)
         try:
+            from .extensions.catalog import maybe_refresh
+            maybe_refresh()
+        except Exception:
+            log.exception("Plugin catalog refresh failed")
+        try:
             for lib in library.all_libraries():
                 settings = library.library_settings(lib)
                 minutes = int(settings.get("scanIntervalMinutes") or 0)
@@ -64,6 +69,11 @@ async def lifespan(app: FastAPI):
     db.init_db()
     from .catalog import fts
     fts.ensure_fts()
+    try:
+        from .extensions.host import load as load_plugins
+        load_plugins()
+    except Exception:
+        log.exception("Plugin load failed")
     log.info("Audivault %s starting (ffprobe %s)", __version__, "found" if probe.FFPROBE else "not found, using mutagen only")
     for lib in library.all_libraries():
         tasks.start("scan", f"Startup scan {lib['name']}", scanner.scan_library, lib["id"], key=f"scan:{lib['id']}", library_id=lib["id"])
@@ -139,7 +149,7 @@ async def http_error(request: Request, exc: StarletteHTTPException):
     return JSONResponse({"error": exc.detail}, status_code=exc.status_code)
 
 
-for module in (auth_routes, libraries, items, me, sessions, entities, admin):
+for module in (auth_routes, libraries, items, me, sessions, entities, admin, plugins):
     app.include_router(module.router)
 
 install_openapi(app)

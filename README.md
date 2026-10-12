@@ -73,7 +73,7 @@ Audivault watches each library folder and import folder for changes:
 - **Full scans:** walk the whole library, but only re-read books whose files changed. Use **Scan** in the library settings. A library can also scan on a timer.
 - **Force rescan:** re-reads metadata for every book.
 
-Watching uses file system events, or polling for network shares and Docker Desktop on Windows/macOS, where file events don't reach the server. You can choose per library, or let `ABSTREAM_WATCH_POLLING` decide.
+Watching uses file system events, or polling for network shares and Docker Desktop on Windows/macOS, where file events don't reach the server. You can choose per library, or let `AUDIVAULT_WATCH_POLLING` decide.
 
 The web interface receives live updates over Server-Sent Events:
 
@@ -189,7 +189,7 @@ Lock a whole library with **Lock the whole library** in its settings, or a singl
 - **Delete** a single book or a whole batch right away.
 - **Empty trash now.**
 
-The trash is emptied automatically once batches are older than the retention period: **30 days** by default, checked at startup and then every hour. Set it to `0` to keep the trash until you empty it yourself. The period can be changed in the app, or with the `ABSTREAM_TRASH_DAYS` environment variable (`TRASH_DAYS` in Docker Compose). When the variable is set, it wins and the setting in the app is locked.
+The trash is emptied automatically once batches are older than the retention period: **30 days** by default, checked at startup and then every hour. Set it to `0` to keep the trash until you empty it yourself. The period can be changed in the app, or with the `AUDIVAULT_TRASH_DAYS` environment variable (`TRASH_DAYS` in Docker Compose). When the variable is set, it wins and the setting in the app is locked.
 
 ### Web interface
 
@@ -248,18 +248,20 @@ You can change the following settings through environment variables:
 
 | Variable                  | Default               | Description                                                                                    |
 | ------------------------- | --------------------- | ---------------------------------------------------------------------------------------------- |
-| `ABSTREAM_PORT`           | `13378`               | HTTP port used by the server                                                                   |
-| `ABSTREAM_HOST`           | `0.0.0.0`             | Network address the server listens on                                                          |
-| `ABSTREAM_DATA_DIR`       | `./data`              | Base folder for the database, cached covers, and author images                                 |
-| `ABSTREAM_CONFIG_DIR`     | `<data dir>/config`   | Database location                                                                              |
-| `ABSTREAM_METADATA_DIR`   | `<data dir>/metadata` | Cached covers and author images                                                                |
-| `ABSTREAM_ACCESS_TTL`     | `43200` (12 hours)    | Access token lifetime in seconds                                                               |
-| `ABSTREAM_REFRESH_TTL`    | `2592000` (30 days)   | Refresh token lifetime in seconds                                                              |
-| `ABSTREAM_WATCH_POLLING`  | off                   | Watch folders by polling instead of file system events (for libraries set to *Automatic*)      |
-| `ABSTREAM_WATCH_INTERVAL` | `30`                  | Seconds between polls                                                                          |
-| `ABSTREAM_WATCH_DELAY`    | `15`                  | Seconds of no changes before a partial scan starts                                             |
-| `ABSTREAM_TRASH_DAYS`     | not set (app: 30)     | Days to keep the trash before emptying it (`0` = forever). When set, the app setting is locked |
-| `ABSTREAM_IMPORT_SETTLE`  | `60`                  | Seconds a book's newest file must be untouched before automatic import picks it up             |
+| `AUDIVAULT_PORT`           | `13378`               | HTTP port used by the server                                                                   |
+| `AUDIVAULT_HOST`           | `0.0.0.0`             | Network address the server listens on                                                          |
+| `AUDIVAULT_DATA_DIR`       | `./data`              | Base folder for the database, cached covers, and author images                                 |
+| `AUDIVAULT_CONFIG_DIR`     | `<data dir>/config`   | Database location                                                                              |
+| `AUDIVAULT_METADATA_DIR`   | `<data dir>/metadata` | Cached covers and author images                                                                |
+| `AUDIVAULT_ACCESS_TTL`     | `43200` (12 hours)    | Access token lifetime in seconds                                                               |
+| `AUDIVAULT_REFRESH_TTL`    | `2592000` (30 days)   | Refresh token lifetime in seconds                                                              |
+| `AUDIVAULT_WATCH_POLLING`  | off                   | Watch folders by polling instead of file system events (for libraries set to *Automatic*)      |
+| `AUDIVAULT_WATCH_INTERVAL` | `30`                  | Seconds between polls                                                                          |
+| `AUDIVAULT_WATCH_DELAY`    | `15`                  | Seconds of no changes before a partial scan starts                                             |
+| `AUDIVAULT_TRASH_DAYS`     | not set (app: 30)     | Days to keep the trash before emptying it (`0` = forever). When set, the app setting is locked |
+| `AUDIVAULT_IMPORT_SETTLE`  | `60`                  | Seconds a book's newest file must be untouched before automatic import picks it up             |
+| `AUDIVAULT_PLUGIN_CATALOG` | official plugins repo | `https://github.com/<owner>/<repo>` catalog override. The default is `Ryahn/Audivault-Plugins` |
+| `AUDIVAULT_PLUGIN_CATALOG_TOKEN` | not set        | GitHub token for a private catalog. Sent only to `api.github.com`                              |
 
 
 **Note:** The web interface loads Bootstrap, Bootstrap Icons, Alpine.js, and Google Fonts through external CDNs, so your browser needs an internet connection to load those resources. Connected mobile apps don't have this requirement. Looking up metadata, covers, and Audible runtimes also needs internet access on the server.
@@ -276,7 +278,7 @@ Once the container starts, open **[http://localhost:13378](http://localhost:1337
 
 ### Upgrading
 
-Compose recreates the container when the service name changes (`audiobookstream` to `audivault`). The database and metadata volumes are host folders, so they stay as long as those mounts are unchanged. Do not rename `.abstream-trash`, `abstream.db`, or the `ABSTREAM_*` variables for the new name.
+Compose recreates the container when the service name changes (`audiobookstream` to `audivault`). The database and metadata volumes are host folders, so they stay as long as those mounts are unchanged. Do not rename `.abstream-trash` or `abstream.db`. Environment variables are `AUDIVAULT_*`. The previous `ABSTREAM_*` names are not read. Stop the container and start it again after changing them.
 
 Before upgrading:
 
@@ -508,7 +510,7 @@ Stop the server (or container) before copying the database, or copy `abstream.db
 
 ## Troubleshooting
 
-- **Port already in use:** another program, often Audiobookshelf, is using `13378`. Set `HOST_PORT` (Docker) or `ABSTREAM_PORT` to a free port.
+- **Port already in use:** another program, often Audiobookshelf, is using `13378`. Set `HOST_PORT` (Docker) or `AUDIVAULT_PORT` to a free port.
 - **New books aren't picked up automatically:** check **Settings → Activity → Watched folders**. On Docker Desktop and network shares, use polling (`WATCH_POLLING=1` or the library's *Detection method*). Polling checks every 30 seconds, and a scan starts once no change has been seen for a full polling interval (15 seconds with file system events).
 - **Auto-import skipped a book:** it is on the Import page marked *Needs review*, with the reason. Fix the metadata there and import it by hand.
 - **A folder shows as missing:** books are marked missing when their folder disappears. If it moved, the next scan finds it again; otherwise use **⋯ → Remove missing items** in the library settings.
@@ -525,9 +527,9 @@ Audivault includes three end-to-end tests. Each one starts from generated test d
 | `tests/api_test.py`        | The Audiobookshelf API as AudioBooth uses it; responses are checked against AudioBooth's Swift data models (missing fields, timestamp formats, response structures) |
 | `tests/live_test.py`       | Cue sheet chapters, folder watching with partial scans, and the live event stream                                                                                   |
 | `tests/dup_test.py`        | Organize on import and on scan, the duplicate manager, and its recommendations                                                                                      |
-| `tests/trash_test.py`      | Trash listing, retention-based emptying, restore, delete, and the `ABSTREAM_TRASH_DAYS` lock; run it right after `dup_test.py`                                      |
+| `tests/trash_test.py`      | Trash listing, retention-based emptying, restore, delete, and the `AUDIVAULT_TRASH_DAYS` lock; run it right after `dup_test.py`                                      |
 | `tests/lock_test.py`       | Locked libraries and folders: refused deletes, duplicates, trash, covers, and organize                                                                              |
-| `tests/autoimport_test.py` | The default import operation and automatic import (needs internet access; start the server with `ABSTREAM_IMPORT_SETTLE=3`)                                         |
+| `tests/autoimport_test.py` | The default import operation and automatic import (needs internet access; start the server with `AUDIVAULT_IMPORT_SETTLE=3`)                                         |
 
 
 Generate test data:
@@ -539,7 +541,7 @@ Generate test data:
 Start a separate Audivault instance on port `13399` with an empty data folder and a short watch delay. On Linux or macOS:
 
 ```bash
-ABSTREAM_PORT=13399 ABSTREAM_DATA_DIR=./testdata-server ABSTREAM_WATCH_DELAY=2 .venv/bin/python run.py
+AUDIVAULT_PORT=13399 AUDIVAULT_DATA_DIR=./testdata-server AUDIVAULT_WATCH_DELAY=2 .venv/bin/python run.py
 ```
 
 Then run `api_test.py` first, followed by **one** of the others (each expects the state `api_test.py` leaves behind, so regenerate the test data and use a fresh server between them):
@@ -556,11 +558,21 @@ Then run `api_test.py` first, followed by **one** of the others (each expects th
 .venv/Scripts/python tests/dup_test.py ./testdata
 ```
 
-To test a server running in Docker, set `ABSTREAM_TEST_URL` to its address and `ABSTREAM_TEST_SERVER_ROOT` to the container path where the test data is mounted.
+To test a server running in Docker, set `AUDIVAULT_TEST_URL` to its address and `AUDIVAULT_TEST_SERVER_ROOT` to the container path where the test data is mounted.
 
 `tests/compat_test.py` and `tests/boundary_test.py` do not need that server. They check token refresh, range requests, progress, bookmarks, collection and playlist membership, opening a database that is missing a later column, and that `app/core` does not import the other packages. Connecting a third-party Audiobookshelf app (such as AudioBooth) and playing a book is a manual check.
 
 ---
+
+## Plugins
+
+Plugins live in [github.com/Ryahn/Audivault-Plugins](https://github.com/Ryahn/Audivault-Plugins), not in this repository. Settings → Plugins reads a cached `catalog.json` from that repo. A refresh downloads the manifest only. Installing a plugin downloads the files listed for that plugin, from the git commit named in the manifest, and checks their SHA-256 sums before saving them under the config directory.
+
+The cache refreshes on its own about every 12 hours, and immediately when you press Refresh. If GitHub is down, the last good catalog stays, and installed plugins can still be enabled, disabled, rolled back, and removed. Enable, disable, install, update, rollback, and uninstall take effect after a restart.
+
+A plugin runs inside the server process. The catalog repository is trusted: a matching checksum only proves a file is the one that catalog listed, and whoever controls that repository can ship code the server will run. A plugin can register a metadata provider, a metadata processor, and scan or import listeners. It cannot replace Audiobookshelf responses or take a database connection from the host. A processor runs on the scan thread, and a misbehaving one can stall that scan. A thread timeout would not safely stop it. A broken plugin is skipped. The library still works with none installed.
+
+`AUDIVAULT_PLUGIN_CATALOG` can point at another `https://github.com/owner/repo` catalog. The Plugins page shows which repository is in use. A private catalog needs `AUDIVAULT_PLUGIN_CATALOG_TOKEN`. That token is sent only to the GitHub API.
 
 ## Releases
 
